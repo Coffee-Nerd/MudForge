@@ -1,8 +1,8 @@
 use egui::Window;
+use std::cell::RefCell; 
 mod telnet;
 mod miniwindow;
 use miniwindow::WindowResizeTest;
-
 
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -13,6 +13,9 @@ pub struct TemplateApp {
     window_resize_test: WindowResizeTest,
     #[serde(skip)]
     telnet_client: telnet::TelnetClient,
+    show_connection_prompt: RefCell<bool>, // Using RefCell
+    ip_address: String,
+    port: u16,
 }
 
 
@@ -26,6 +29,9 @@ impl TemplateApp {
             value: 2.7,
             window_resize_test: WindowResizeTest::new(),
             telnet_client: telnet::TelnetClient::new(),
+            show_connection_prompt: RefCell::new(false), // Initialize
+            ip_address: "127.0.0.1".to_owned(),
+            port: 23,
         }
     }
 }
@@ -38,10 +44,10 @@ impl eframe::App for TemplateApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
             ("File", vec![
-                ("Quit", Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close))),
+                ("Quit", Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close))),  
             ]),
             ("Connection", vec![
-                ("New", Box::new(|s, _| s.telnet_client.connection_open = true)),
+                ("New", Box::new(|s, _| { s.show_connection_prompt.replace(true); })), // Updated
             ]),
         ];
 
@@ -63,7 +69,6 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                powered_by_egui_and_eframe(ui);
                 egui::warn_if_debug_build(ui);
                 ui.separator();
                 ui.horizontal(|ui| {
@@ -75,21 +80,29 @@ impl eframe::App for TemplateApp {
             });
         });
 
+        let mut open = *self.show_connection_prompt.borrow(); 
+        let mut close_window = false; 
+
+        if open {
+            egui::Window::new("Connect to Telnet Server")
+                .open(&mut open)
+                .show(ctx, |ui| {
+                    ui.text_edit_singleline(&mut self.ip_address);
+                    ui.add(egui::Slider::new(&mut self.port, 0..=65535).text("Port"));
+                    if ui.button("Connect").clicked() {
+                        if let Err(e) = self.telnet_client.connect(&self.ip_address, self.port) {
+                            eprintln!("Connection error: {}", e);
+                        }
+                        close_window = true; 
+                    }
+                });
+
+            if close_window {
+                *self.show_connection_prompt.borrow_mut() = false;
+            }
+        }
+
         self.window_resize_test.show(ctx);
         self.telnet_client.show(ctx);
     }
-}
-
-fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        ui.spacing_mut().item_spacing.x = 0.0;
-        ui.label("Powered by ");
-        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
-        ui.label(" and ");
-        ui.hyperlink_to(
-            "eframe",
-            "https://github.com/emilk/egui/tree/master/crates/eframe",
-        );
-        ui.label(".");
-    });
 }

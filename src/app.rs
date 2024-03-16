@@ -2,6 +2,7 @@ use egui::Window;
 use std::cell::RefCell; 
 mod telnet;
 mod miniwindow;
+mod colors;
 use miniwindow::WindowResizeTest;
 
 
@@ -16,6 +17,7 @@ pub struct TemplateApp {
     show_connection_prompt: RefCell<bool>, // Using RefCell
     ip_address: String,
     port: u16,
+    command: String,
 }
 
 
@@ -32,6 +34,7 @@ impl TemplateApp {
             show_connection_prompt: RefCell::new(false), // Initialize
             ip_address: "127.0.0.1".to_owned(),
             port: 23,
+            command: String::new(),
         }
     }
 }
@@ -71,12 +74,27 @@ impl eframe::App for TemplateApp {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 egui::warn_if_debug_build(ui);
                 ui.separator();
+        
+                // Make the CentralPanel fill the entire width of the window
+                ui.set_max_width(ui.available_size().x);
+        
+                // Add a text input field for the command
+                let mut command = String::new();
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.label);
+                    ui.text_edit_singleline(&mut self.command);
+                    if ui.button("Send").clicked() {
+                        if !self.command.is_empty() {
+                            // Append a newline character if required by the Telnet server
+                            self.command.push('\n');
+                            if let Err(e) = self.telnet_client.write(self.command.as_bytes()) {
+                                eprintln!("Failed to send command: {}", e);
+                            }
+                            self.command.clear();
+                        } else {
+                            println!("Command is empty"); // Debug print
+                        }
+                    }
                 });
-                if ui.button("Increment").clicked() {
-                    self.value += 1.0;
-                }
             });
         });
 
@@ -86,9 +104,18 @@ impl eframe::App for TemplateApp {
         if open {
             egui::Window::new("Connect to Telnet Server")
                 .open(&mut open)
+                .vscroll(true)
+                .resizable(true)
+                .default_height(300.0)
                 .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                    ui.label("Ip Address:    ");
                     ui.text_edit_singleline(&mut self.ip_address);
-                    ui.add(egui::Slider::new(&mut self.port, 0..=65535).text("Port"));
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Port number:");
+                        ui.text_edit_singleline(&mut self.port.to_string());
+                        });
                     if ui.button("Connect").clicked() {
                         if let Err(e) = self.telnet_client.connect(&self.ip_address, self.port) {
                             eprintln!("Connection error: {}", e);
@@ -99,6 +126,12 @@ impl eframe::App for TemplateApp {
 
             if close_window {
                 *self.show_connection_prompt.borrow_mut() = false;
+            }
+        }
+
+        if self.telnet_client.is_connected() {
+            if let Some(data) = self.telnet_client.read_nonblocking() {
+            //    println!("Received data: {}", data.text());
             }
         }
 

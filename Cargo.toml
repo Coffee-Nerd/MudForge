@@ -19,6 +19,8 @@ log = "0.4"
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 telnet = "0.2.1"
+lazy_static = "1.4.0"
+ansi_term = "0.12.1"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

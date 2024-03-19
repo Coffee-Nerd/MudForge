@@ -1,11 +1,31 @@
 use std::net::ToSocketAddrs;
 use telnet::{Telnet, Event, TelnetOption, Action}; 
-use crate::app::parse_colors::TelnetState;
 use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle};
 use std::sync::Arc;
-use crate::app::parse_colors;
 use std::collections::HashMap;
+use crate::app::ansi_color::{generate_xterm_color_map, COLOR_MAP};
 
+
+
+pub struct TelnetState {
+    current_foreground: egui::Color32,
+    current_background: egui::Color32,
+    bold: bool,
+    italic: bool,
+    underline: bool,
+}
+
+impl Default for TelnetState {
+    fn default() -> Self {
+        Self { 
+            current_foreground: egui::Color32::WHITE, // Default to white
+            current_background: egui::Color32::BLACK, // Default to black
+            bold: false,
+            italic: false,
+            underline: false,
+        }
+    }
+}
 pub struct TelnetClient {
     client: Option<Telnet>,
     pub connection_open: bool,
@@ -176,32 +196,12 @@ enum AnsiState {
     Parsing(Vec<u8>),
 }
 
-fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
+pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
     let mut results = Vec::new();
     let mut current_text = String::new();
     let mut current_color = Color32::WHITE; // Default color
     let mut state = AnsiState::Normal;
     let mut ansi_buffer: Vec<u8> = Vec::new();
-
-    // A map of color code sequences to Color32 values
-    let mut color_map: HashMap<String, Color32> = HashMap::new();
-    color_map.insert("0;30".into(), Color32::from_rgb(0, 0, 0));       // Black
-    color_map.insert("0;31".into(), Color32::from_rgb(128, 0, 0));     // Dark Red
-    color_map.insert("0;32".into(), Color32::from_rgb(0, 128, 0));     // Dark Green
-    color_map.insert("0;33".into(), Color32::from_rgb(128, 128, 0));   // Dark Yellow
-    color_map.insert("0;34".into(), Color32::from_rgb(0, 0, 128));     // Dark Blue
-    color_map.insert("0;35".into(), Color32::from_rgb(128, 0, 128));   // Dark Magenta
-    color_map.insert("0;36".into(), Color32::from_rgb(0, 128, 128));   // Dark Cyan
-    color_map.insert("0;37".into(), Color32::from_rgb(192, 192, 192)); // Light Gray
-    color_map.insert("1;30".into(), Color32::from_rgb(128, 128, 128)); // Dark Gray
-    color_map.insert("1;31".into(), Color32::from_rgb(255, 0, 0));     // Red
-    color_map.insert("1;32".into(), Color32::from_rgb(0, 255, 0));     // Green
-    color_map.insert("1;33".into(), Color32::from_rgb(255, 255, 0));   // Yellow
-    color_map.insert("1;34".into(), Color32::from_rgb(0, 0, 255));     // Blue
-    color_map.insert("1;35".into(), Color32::from_rgb(255, 0, 255));   // Magenta
-    color_map.insert("1;36".into(), Color32::from_rgb(0, 255, 255));   // Cyan
-    color_map.insert("1;37".into(), Color32::from_rgb(255, 255, 255)); // White
-    
 
     for byte in buffer {
         match state {
@@ -227,7 +227,11 @@ fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
             AnsiState::Parsing(ref mut buf) => {
                 if byte == b'm' { // End of ANSI code
                     let code = String::from_utf8_lossy(buf).to_string();
-                    current_color = *color_map.get(&code).unwrap_or(&Color32::WHITE);
+                    if let Some(new_color) = COLOR_MAP.iter()
+                        .find(|&&(ansi_code, _)| ansi_code == code)
+                        .map(|&(_, color)| color) {
+                            current_color = new_color;
+                    }
                     buf.clear();
                     state = AnsiState::Normal;
                 } else if byte.is_ascii_digit() || byte == b';' {
@@ -245,6 +249,7 @@ fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
 
     results
 }
+
 
 
 

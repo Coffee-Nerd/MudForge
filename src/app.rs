@@ -2,7 +2,7 @@ use egui::Window;
 use std::cell::RefCell; 
 mod telnet;
 mod miniwindow;
-mod parse_colors;
+mod ansi_color;
 use miniwindow::WindowResizeTest;
 
 

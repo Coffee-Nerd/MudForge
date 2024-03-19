@@ -81,8 +81,8 @@ impl eframe::App for TemplateApp {
                 // Add a text input field for the command
                 let mut command = String::new();
                 ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.command);
-                    if ui.button("Send").clicked() {
+                    ui.code_editor(&mut self.command);
+                    if ui.button("Send").clicked() | ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if !self.command.is_empty() {
                             // Append a newline character if required by the Telnet server
                             self.command.push('\n');

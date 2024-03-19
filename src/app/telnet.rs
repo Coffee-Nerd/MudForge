@@ -1,14 +1,14 @@
 use std::net::ToSocketAddrs;
 use telnet::{Telnet, Event, TelnetOption, Action}; 
-use crate::app::colors::TelnetState;
-use egui::{Color32, FontId, TextFormat, TextEdit, Ui, TextStyle};
+use crate::app::parse_colors::TelnetState;
+use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle};
 use std::sync::Arc;
-
+use crate::app::parse_colors;
 
 pub struct TelnetClient {
     client: Option<Telnet>,
     pub connection_open: bool,
-    received_data: String,  // Add a field to store received data
+    received_data: Vec<(String, Color32)>,
     pub received_text: Vec<(String, String)>,
     telnet_state: TelnetState
 }
@@ -18,7 +18,7 @@ impl TelnetClient {
         Self {
             client: None,
             connection_open: false,
-            received_data: String::new(),  // Initialize the received data string
+            received_data: Vec::new(),
             received_text: Vec::new(),
             telnet_state: TelnetState::default()
         }
@@ -39,14 +39,14 @@ impl TelnetClient {
 
         // Enable the "Terminal Type" option
         if let Some(ref mut client) = self.client {
-            // Create a vector to hold your option settings
+            // Create a vector to hold the option settings
             let mut options = Vec::new();
             options.push((TelnetOption::TTYPE, Some(b"xterm-256color")));
         
  // Negotiate each option individually
  for (option, value) in options {
     // Determine the appropriate action (Do, Will, etc.)
-    let action = Action::Will; // You might need to adjust this
+    let action = Action::Will;
 
     client.negotiate(&action, option).expect("Failed to negotiate options");
 }
@@ -61,21 +61,21 @@ impl TelnetClient {
     
     
 
-    pub fn read_nonblocking(&mut self) -> Option<String> {
+    pub fn read_nonblocking(&mut self) -> Option<Vec<(String, Color32)>> {
         if let Some(ref mut client) = self.client {
             match client.read_nonblocking().expect("Read error") {
                 Event::Data(buffer) => {
                     // Print raw data in hexadecimal
                     println!("Raw incoming data (hex): {:02X?}", buffer);
-
+    
                     let parsed_text = parse_ansi_codes(buffer.to_vec(), &mut self.telnet_state);
-
-                    // Append the parsed text to received_data
-                    self.received_data.push_str(&parsed_text);
-
+    
+                    // Append the parsed text-color pairs to received_data
+                    self.received_data.extend(parsed_text.clone());
+    
                     // Debug message for received text
-                    println!("Received text: {}", parsed_text);
-
+                    println!("Received text: {:?}", parsed_text);
+    
                     Some(parsed_text)
                 }
                 _ => None,
@@ -106,24 +106,44 @@ impl TelnetClient {
                 .resizable(true)
                 .frame(egui::Frame::none().fill(egui::Color32::BLACK))
                 .show(ctx, |ui| {
-                    // Use TextEdit for displaying received data with syntax highlighting
-                    let mut text_edit = TextEdit::multiline(&mut self.received_data)
-                        .text_color(Color32::WHITE);  // Set default text color to white
-                    
-                    // Custom layouter for syntax highlighting
-                    let mut layouter = |ui: &Ui, string: &str, wrap_width: f32| {
-                        let mut layout_job: egui::text::LayoutJob = default_highlighter(ui, string);
-                        layout_job.wrap.max_width = wrap_width;
-                        ui.fonts(|f| f.layout_job(layout_job))
-                    };
-                    text_edit = text_edit.layouter(&mut layouter);
+                    // Create a new LayoutJob
+                    let mut job = egui::text::LayoutJob::default();
     
-                    ui.add(text_edit);
+                    // Define the default text style 
+                    let font_id = ui.style().text_styles[&egui::TextStyle::Body].clone();
+    
+                    for (text, color) in &self.received_data {
+                        // Handle newlines within text
+                        for line in text.split('\n') {
+                            if !line.is_empty() {
+                                // Add each line of text along with its color to the LayoutJob
+                                job.append(
+                                    line,
+                                    0.0, // Words spacing
+                                    egui::text::TextFormat {
+                                        font_id: font_id.clone(),
+                                        color: *color,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                            // Insert a newline in the LayoutJob if there was one in the original text
+                            if text.contains('\n') {
+                                job.append("\n", 0.0, egui::text::TextFormat::default());
+                            }
+                        }
+                    }
+    
+                    // Add the LayoutJob to the Ui
+                    ui.label(job);
+    
+                    // Auto-scroll to the bottom
                     ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
                 });
         }
     }
-}
+    
+}    
 
 impl Default for TelnetClient {
     fn default() -> Self {
@@ -149,8 +169,84 @@ fn default_highlighter(ui: &Ui, string: &str) -> egui::text::LayoutJob {
 
 
 
-// Replace this with your own function for parsing ANSI codes
-fn parse_ansi_codes(buffer: Vec<u8>, telnet_state: &mut TelnetState) -> String {
-    // Placeholder implementation
-    String::from_utf8_lossy(&buffer).into_owned()
+enum AnsiState {
+    Normal,
+    Escaped,
+    Parsing(Vec<u8>),
 }
+
+fn parse_ansi_codes(buffer: Vec<u8>, telnet_state: &mut TelnetState) -> Vec<(String, Color32)> {
+    let mut results = Vec::new();
+    let mut current_text = String::new();
+    let mut current_color = Color32::WHITE; // Default color
+    let mut state = AnsiState::Normal;
+
+    for byte in buffer {
+        match state {
+            AnsiState::Normal => if byte == 0x1B {
+                // If there is text accumulated with the current color, push it into results.
+                if !current_text.is_empty() {
+                    results.push((current_text.clone(), current_color));
+                    current_text.clear();
+                }
+                state = AnsiState::Escaped;
+            } else {
+                current_text.push(byte as char);
+            },
+            AnsiState::Escaped => if byte == b'[' {
+                state = AnsiState::Parsing(Vec::new());
+            } else {
+                state = AnsiState::Normal;
+            },
+            AnsiState::Parsing(ref mut buf) => if byte == b'm' {
+                // End of ANSI sequence, determine color.
+                current_color = match buf.as_slice() {
+                    b"0;32" => Color32::from_rgb(0, 128, 0), // Example color
+                    // Add other color cases here
+                    _ => Color32::WHITE, // Default to white for unknown codes
+                };
+                buf.clear();
+                state = AnsiState::Normal;
+            } else if (byte as char).is_digit(10) || byte == b';' {
+                buf.push(byte);
+            } else {
+                // Unexpected byte, abort ANSI sequence.
+                state = AnsiState::Normal;
+            },
+        }
+    }
+
+    // If there's text left after parsing, push it into results.
+    if !current_text.is_empty() {
+        results.push((current_text, current_color));
+    }
+
+    results
+}
+
+
+
+fn parse_ansi_escape_sequence(sequence: &[u8], telnet_state: &mut TelnetState) -> (String, Color32) {
+    let seq_str = String::from_utf8_lossy(sequence);
+    let color = match seq_str.as_ref() {
+        "0;30m" => Color32::from_rgb(0, 0, 0),      // Black
+        "0;31m" => Color32::from_rgb(128, 0, 0),    // Dark Red
+        "0;32m" => Color32::from_rgb(0, 128, 0),    // Dark Green
+        "0;33m" => Color32::from_rgb(128, 128, 0),  // Dark Yellow
+        "0;34m" => Color32::from_rgb(0, 0, 128),    // Dark Blue
+        "0;35m" => Color32::from_rgb(128, 0, 128),  // Dark Magenta
+        "0;36m" => Color32::from_rgb(0, 128, 128),  // Dark Cyan
+        "0;37m" => Color32::from_rgb(192, 192, 192),// Light Gray
+        "1;30m" => Color32::from_rgb(128, 128, 128),// Dark Gray
+        "1;31m" => Color32::from_rgb(255, 0, 0),    // Red
+        "1;32m" => Color32::from_rgb(0, 255, 0),    // Green
+        "1;33m" => Color32::from_rgb(255, 255, 0),  // Yellow
+        "1;34m" => Color32::from_rgb(0, 0, 255),    // Blue
+        "1;35m" => Color32::from_rgb(255, 0, 255),  // Magenta
+        "1;36m" => Color32::from_rgb(0, 255, 255),  // Cyan
+        "1;37m" => Color32::from_rgb(255, 255, 255),// White
+        _ => Color32::from_rgb(255, 255, 255),      // Default to white if unknown
+    };
+    (seq_str.to_string(), color)
+}
+

@@ -1,9 +1,9 @@
 use std::net::ToSocketAddrs;
 use telnet::{Telnet, Event, TelnetOption, Action}; 
-use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle};
+use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle, ScrollArea};
 use crate::app::ansi_color::{COLOR_MAP};
 use std::time::Instant; 
-
+use egui::scroll_area::ScrollBarVisibility;
 
 
 pub struct TelnetState {
@@ -86,7 +86,7 @@ impl TelnetClient {
             match client.read_nonblocking().expect("Read error") {
                 Event::Data(buffer) => {
                     // Print raw data in hexadecimal
-                    println!("Raw incoming data (hex): {:02X?}", buffer);
+                   // println!("Raw incoming data (hex): {:02X?}", buffer);
     
                     let parsed_text = parse_ansi_codes(buffer.to_vec());
     
@@ -94,7 +94,7 @@ impl TelnetClient {
                     self.received_data.extend(parsed_text.clone());
     
                     // Debug message for received text
-                    println!("Received text: {:?}", parsed_text);
+                  //  println!("Received text: {:?}", parsed_text);
     
                     Some(parsed_text.into_iter().flatten().collect())
                 }
@@ -127,43 +127,44 @@ pub fn show(&mut self, ctx: &egui::Context) {
     if self.connection_open {
         let start_time = Instant::now();
         egui::Window::new("Telnet Connection")
-            .vscroll(true)
             .resizable(true)
-  //          .frame(egui::Frame::none().fill(egui::Color32::BLACK))
             .show(ctx, |ui| {
+                let text_style = egui::TextStyle::Body;
+                let row_height = ui.text_style_height(&text_style);
                 let font_id = ui.style().text_styles[&egui::TextStyle::Body].clone();
-                let row_height = ui.fonts(|fonts| fonts.row_height(&font_id));
-                let total_rows = self.received_data.len();
 
-                egui::ScrollArea::vertical()
-                .stick_to_bottom(true) // To keep the scrollbar at the bottom at all times unless you scroll up
-                .show_rows(ui, row_height, total_rows, |ui, row_range| {
-                    for row in row_range {
-                        let line = &self.received_data[row];
-                        let mut job = egui::text::LayoutJob::default();
-                        for (text, color) in line {
-                            job.append(
-                                text,
-                                0.0,
-                                egui::text::TextFormat {
-                                    font_id: font_id.clone(),
-                                    color: *color,
-                                    ..Default::default()
-                                },
-                            );
+                ui.label("Received Data:");
+                ui.add_space(4.0);
+
+                ScrollArea::vertical()
+                .stick_to_bottom(true)
+                    .auto_shrink(false)
+             //       .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
+                    .show_rows(ui, row_height, self.received_data.len(), |ui, row_range| {
+                        for row in row_range {
+                            let line = &self.received_data[row];
+                            let mut job = egui::text::LayoutJob::default();
+                            for (text, color) in line {
+                                job.append(
+                                    text,
+                                    0.0,
+                                    egui::text::TextFormat {
+                                        font_id: font_id.clone(),
+                                        color: *color,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                            ui.add(egui::Label::new(job));
                         }
-                        ui.add(egui::Label::new(job));
-                    }
-                });
-
-                // Auto-scroll to the bottom
-                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                ui.allocate_space(ui.available_size());
+                        let elapsed = start_time.elapsed();
+                        println!("Visible rows rendered in: {:?}", elapsed);
+                    });
             });
-            let elapsed = start_time.elapsed();
-            println!("Redraw completed in: {:?}", elapsed);
     }
 }
+
+
 
 
     
@@ -187,7 +188,6 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
     let mut current_text = String::new();
     let mut current_color = Color32::WHITE; // Default color
     let mut state = AnsiState::Normal;
-    let mut ansi_buffer: Vec<u8> = Vec::new();
 
     for byte in buffer {
         match state {
@@ -204,7 +204,6 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
             },
             AnsiState::Escaped => {
                 if byte == b'[' { // CSI character
-                    ansi_buffer.clear();
                     state = AnsiState::Parsing(Vec::new());
                 } else {
                     state = AnsiState::Normal;
@@ -213,10 +212,8 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
             AnsiState::Parsing(ref mut buf) => {
                 if byte == b'm' { // End of ANSI code
                     let code = String::from_utf8_lossy(buf).to_string();
-                    if let Some(new_color) = COLOR_MAP.iter()
-                        .find(|&&(ansi_code, _)| ansi_code == code)
-                        .map(|&(_, color)| color) {
-                            current_color = new_color;
+                    if let Some(new_color) = COLOR_MAP.get(code.as_str()) {
+                        current_color = *new_color;
                     }
                     buf.clear();
                     state = AnsiState::Normal;

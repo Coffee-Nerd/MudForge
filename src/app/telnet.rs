@@ -2,6 +2,7 @@ use std::net::ToSocketAddrs;
 use telnet::{Telnet, Event, TelnetOption, Action}; 
 use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle};
 use crate::app::ansi_color::{COLOR_MAP};
+use std::time::Instant; 
 
 
 
@@ -27,7 +28,7 @@ impl Default for TelnetState {
 pub struct TelnetClient {
     client: Option<Telnet>,
     pub connection_open: bool,
-    received_data: Vec<(String, Color32)>,
+    received_data: Vec<Vec<(String, Color32)>>,
     pub received_text: Vec<(String, String)>,
     telnet_state: TelnetState
 }
@@ -95,7 +96,7 @@ impl TelnetClient {
                     // Debug message for received text
                     println!("Received text: {:?}", parsed_text);
     
-                    Some(parsed_text)
+                    Some(parsed_text.into_iter().flatten().collect())
                 }
                 _ => None,
             }
@@ -103,6 +104,7 @@ impl TelnetClient {
             None
         }
     }
+    
     
 
     pub fn write(&mut self, buffer: &[u8]) -> Result<(), String> {
@@ -118,50 +120,52 @@ impl TelnetClient {
         self.client.is_some()
     }
 
-    pub fn show(&mut self, ctx: &egui::Context) {
-        if self.connection_open {
-            egui::Window::new("Telnet Connection")
-                .vscroll(true)
-                .resizable(true)
-                .frame(egui::Frame::none().fill(egui::Color32::BLACK))
-                .show(ctx, |ui| {
-                    // Create a new LayoutJob
-                    let mut job = egui::text::LayoutJob::default();
-    
-                    // Define the default text style 
-                    let font_id = ui.style().text_styles[&egui::TextStyle::Body].clone();
-    
-                    for (text, color) in &self.received_data {
-                        // Handle newlines within text
-                        for line in text.split('\n') {
-                            if !line.is_empty() {
-                                // Add each line of text along with its color to the LayoutJob
-                                job.append(
-                                    line,
-                                    0.0, // Words spacing
-                                    egui::text::TextFormat {
-                                        font_id: font_id.clone(),
-                                        color: *color,
-                                        ..Default::default()
-                                    },
-                                );
-                            }
-                            // Insert a newline in the LayoutJob if there was one in the original text
-                            if text.contains('\n') {
-                                job.append("\n", 0.0, egui::text::TextFormat::default());
-                            }
+// Assuming received_data is now a Vec<Vec<(String, Color32)>>
+// where each inner Vec represents a line of text
+
+pub fn show(&mut self, ctx: &egui::Context) {
+    if self.connection_open {
+        let start_time = Instant::now();
+        egui::Window::new("Telnet Connection")
+            .vscroll(true)
+            .resizable(true)
+  //          .frame(egui::Frame::none().fill(egui::Color32::BLACK))
+            .show(ctx, |ui| {
+                let font_id = ui.style().text_styles[&egui::TextStyle::Body].clone();
+                let row_height = ui.fonts(|fonts| fonts.row_height(&font_id));
+                let total_rows = self.received_data.len();
+
+                egui::ScrollArea::vertical()
+                .stick_to_bottom(true) // To keep the scrollbar at the bottom at all times unless you scroll up
+                .show_rows(ui, row_height, total_rows, |ui, row_range| {
+                    for row in row_range {
+                        let line = &self.received_data[row];
+                        let mut job = egui::text::LayoutJob::default();
+                        for (text, color) in line {
+                            job.append(
+                                text,
+                                0.0,
+                                egui::text::TextFormat {
+                                    font_id: font_id.clone(),
+                                    color: *color,
+                                    ..Default::default()
+                                },
+                            );
                         }
+                        ui.add(egui::Label::new(job));
                     }
-    
-                    // Add the LayoutJob to the Ui
-                    ui.label(job);
-    
-                    // Auto-scroll to the bottom
-                    ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
-                    ui.allocate_space(ui.available_size());
                 });
-        }
+
+                // Auto-scroll to the bottom
+                ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                ui.allocate_space(ui.available_size());
+            });
+            let elapsed = start_time.elapsed();
+            println!("Redraw completed in: {:?}", elapsed);
     }
+}
+
+
     
 }    
 
@@ -177,8 +181,9 @@ enum AnsiState {
     Parsing(Vec<u8>),
 }
 
-pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
-    let mut results = Vec::new();
+pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
+    let mut results: Vec<Vec<(String, Color32)>> = Vec::new();
+    let mut current_line: Vec<(String, Color32)> = Vec::new();
     let mut current_text = String::new();
     let mut current_color = Color32::WHITE; // Default color
     let mut state = AnsiState::Normal;
@@ -190,7 +195,7 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
                 if byte == 0x1B { // ESC character
                     state = AnsiState::Escaped;
                     if !current_text.is_empty() {
-                        results.push((current_text.clone(), current_color));
+                        current_line.push((current_text.clone(), current_color));
                         current_text.clear();
                     }
                 } else {
@@ -225,7 +230,11 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
     }
 
     if !current_text.is_empty() {
-        results.push((current_text, current_color));
+        current_line.push((current_text, current_color));
+    }
+
+    if !current_line.is_empty() {
+        results.push(current_line);
     }
 
     results

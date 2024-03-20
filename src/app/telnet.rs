@@ -1,9 +1,7 @@
 use std::net::ToSocketAddrs;
 use telnet::{Telnet, Event, TelnetOption, Action}; 
 use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle};
-use std::sync::Arc;
-use std::collections::HashMap;
-use crate::app::ansi_color::{generate_xterm_color_map, COLOR_MAP};
+use crate::app::ansi_color::{COLOR_MAP};
 
 
 
@@ -160,6 +158,7 @@ impl TelnetClient {
     
                     // Auto-scroll to the bottom
                     ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                    ui.allocate_space(ui.available_size());
                 });
         }
     }
@@ -171,24 +170,6 @@ impl Default for TelnetClient {
         Self::new()
     }
 }
-
-
-fn default_highlighter(ui: &Ui, string: &str) -> egui::text::LayoutJob {
-    let mut job = egui::text::LayoutJob::default();
-    let font_id = ui.style().text_styles[&TextStyle::Body].clone(); // Clone the FontId for the body text style
-
-    for word in string.split_whitespace() {
-        let color = match word {
-            // Example: colorize "error" words in red
-            "error" => Color32::RED,
-            _ => Color32::WHITE,
-        };
-        job.append(word, 0.0, TextFormat::simple(font_id.clone(), color)); // Clone the FontId for each word
-    }
-    job
-}
-
-
 
 enum AnsiState {
     Normal,
@@ -249,31 +230,3 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<(String, Color32)> {
 
     results
 }
-
-
-
-
-fn parse_ansi_escape_sequence(sequence: &[u8], telnet_state: &mut TelnetState) -> (String, Color32) {
-    let seq_str = String::from_utf8_lossy(sequence);
-    let color = match seq_str.as_ref() {
-        "0;30m" => Color32::from_rgb(0, 0, 0),      // Black
-        "0;31m" => Color32::from_rgb(128, 0, 0),    // Dark Red
-        "0;32m" => Color32::from_rgb(0, 128, 0),    // Dark Green
-        "0;33m" => Color32::from_rgb(128, 128, 0),  // Dark Yellow
-        "0;34m" => Color32::from_rgb(0, 0, 128),    // Dark Blue
-        "0;35m" => Color32::from_rgb(128, 0, 128),  // Dark Magenta
-        "0;36m" => Color32::from_rgb(0, 128, 128),  // Dark Cyan
-        "0;37m" => Color32::from_rgb(192, 192, 192),// Light Gray
-        "1;30m" => Color32::from_rgb(128, 128, 128),// Dark Gray
-        "1;31m" => Color32::from_rgb(255, 0, 0),    // Red
-        "1;32m" => Color32::from_rgb(0, 255, 0),    // Green
-        "1;33m" => Color32::from_rgb(255, 255, 0),  // Yellow
-        "1;34m" => Color32::from_rgb(0, 0, 255),    // Blue
-        "1;35m" => Color32::from_rgb(255, 0, 255),  // Magenta
-        "1;36m" => Color32::from_rgb(0, 255, 255),  // Cyan
-        "1;37m" => Color32::from_rgb(255, 255, 255),// White
-        _ => Color32::from_rgb(255, 255, 255),      // Default to white if unknown
-    };
-    (seq_str.to_string(), color)
-}
-

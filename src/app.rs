@@ -4,6 +4,7 @@ mod telnet;
 mod miniwindow;
 mod ansi_color;
 use miniwindow::WindowResizeTest;
+use egui::FontFamily;
 
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -23,6 +24,36 @@ pub struct TemplateApp {
 
 impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        // Set the custom style
+        let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.faint_bg_color = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.code_bg_color = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.hyperlink_color = egui::Color32::from_rgb(255, 0, 0);
+        style.visuals.override_text_color = Some(egui::Color32::from_rgb(173, 186, 199));
+        //style.visuals.window_corner_radius = 10.0;
+        style.visuals.button_frame = true;
+        style.visuals.collapsing_header_frame = true;
+        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(35, 39, 46);
+        style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(0., egui::Color32::from_rgb(173, 186, 199));
+        style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
+        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.widgets.open.bg_fill = egui::Color32::from_rgb(45, 51, 59);
+        cc.egui_ctx.set_style(style);
+    
+// Custom font
+let font_ReFixedysMono = include_bytes!("data/refixedsys-mono.otf").to_vec();
+let mut font = egui::FontDefinitions::default();
+font.font_data.insert(
+    "ReFixedys Mono".to_string(),
+    egui::FontData::from_owned(font_ReFixedysMono),
+);
+font.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "ReFixedys Mono".to_string());
+font.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "ReFixedys Mono".to_string());
+cc.egui_ctx.set_fonts(font);
+    
+        // Initialize the rest of the application
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
@@ -38,7 +69,7 @@ impl TemplateApp {
         }
     }
 }
-
+    
 impl eframe::App for TemplateApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
@@ -131,10 +162,11 @@ impl eframe::App for TemplateApp {
 
         if self.telnet_client.is_connected() {
             if let Some(data) = self.telnet_client.read_nonblocking() {
+                    // Request a repaint for the next frame
             //    println!("Received data: {}", data.text());
             }
+            ctx.request_repaint();
         }
-
         self.window_resize_test.show(ctx);
         self.telnet_client.show(ctx);
     }

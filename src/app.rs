@@ -26,10 +26,11 @@ impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Set the custom style
         let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
-        style.visuals.extreme_bg_color = egui::Color32::from_rgb(45, 51, 59);
+        style.visuals.extreme_bg_color = egui::Color32::from_rgb(45, 51, 59); // text box background
         style.visuals.faint_bg_color = egui::Color32::from_rgb(45, 51, 59);
         style.visuals.code_bg_color = egui::Color32::from_rgb(45, 51, 59);
         style.visuals.hyperlink_color = egui::Color32::from_rgb(255, 0, 0);
+        style.visuals.window_fill = egui::Color32::from_rgb(0, 0, 0); // menu bg, widget bg
         style.visuals.override_text_color = Some(egui::Color32::from_rgb(173, 186, 199));
         //style.visuals.window_corner_radius = 10.0;
         style.visuals.button_frame = true;

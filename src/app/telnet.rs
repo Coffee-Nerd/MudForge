@@ -1,46 +1,27 @@
-use std::net::ToSocketAddrs;
-use telnet::{Telnet, Event, TelnetOption, Action}; 
-use egui::{Color32, Context, FontId, TextFormat, TextEdit, Ui, TextStyle, ScrollArea};
-use crate::app::ansi_color::{COLOR_MAP};
-use std::time::Instant; 
-use egui::scroll_area::ScrollBarVisibility;
+use std::net::{TcpStream, ToSocketAddrs};
+use libmudtelnet::{Parser}; // Adjusted import for TelnetEvents
+use libmudtelnet::compatibility::CompatibilityTable; // Adjusted import for CompatibilityTable
+use libmudtelnet::events::TelnetEvents;
+use egui::{Color32, Context, ScrollArea};
+use crate::app::ansi_color::COLOR_MAP;
+use std::time::Instant;
+use std::io::{Read, Write};
 
-
-pub struct TelnetState {
-    current_foreground: egui::Color32,
-    current_background: egui::Color32,
-    bold: bool,
-    italic: bool,
-    underline: bool,
-}
-
-impl Default for TelnetState {
-    fn default() -> Self {
-        Self { 
-            current_foreground: egui::Color32::WHITE, // Default to white
-            current_background: egui::Color32::BLACK, // Default to black
-            bold: false,
-            italic: false,
-            underline: false,
-        }
-    }
-}
 pub struct TelnetClient {
-    client: Option<Telnet>,
+    stream: Option<TcpStream>,
     pub connection_open: bool,
     received_data: Vec<Vec<(String, Color32)>>,
-    pub received_text: Vec<(String, String)>,
-    telnet_state: TelnetState
+    parser: Parser,
 }
+
 
 impl TelnetClient {
     pub fn new() -> Self {
         Self {
-            client: None,
+            stream: None,
             connection_open: false,
             received_data: Vec::new(),
-            received_text: Vec::new(),
-            telnet_state: TelnetState::default()
+            parser: Parser::new(),
         }
     }
 
@@ -52,123 +33,116 @@ impl TelnetClient {
             .next()
             .ok_or("Invalid address")?;
 
-        self.client = Some(
-            Telnet::connect(socket_addr, 256)
-                .map_err(|e| format!("Connection failed: {}", e))?,
-        );
-
-        // Enable the "Terminal Type" option
-        if let Some(ref mut client) = self.client {
-            // Create a vector to hold the option settings
-            let mut options = Vec::new();
-            options.push((TelnetOption::TTYPE, Some(b"xterm-256color")));
-        
- // Negotiate each option individually
- for (option, value) in options {
-    // Determine the appropriate action (Do, Will, etc.)
-    let action = Action::Will;
-
-    client.negotiate(&action, option).expect("Failed to negotiate options");
-}
-        }
-        // Debug message for successful connection
-        println!("Connected to {}:{}", ip_address, port);
+        let stream = TcpStream::connect(socket_addr).map_err(|e| format!("Connection failed: {}", e))?;
+        stream.set_nonblocking(true).map_err(|e| format!("Failed to set non-blocking mode: {}", e))?;
+        self.stream = Some(stream);
         self.connection_open = true;
+        println!("Connected to {}:{}", ip_address, port);
         Ok(())
     }
-    
-    
-    
-    
 
     pub fn read_nonblocking(&mut self) -> Option<Vec<(String, Color32)>> {
-        if let Some(ref mut client) = self.client {
-            match client.read_nonblocking().expect("Read error") {
-                Event::Data(buffer) => {
-                    // Print raw data in hexadecimal
-                   // println!("Raw incoming data (hex): {:02X?}", buffer);
+        if let Some(ref mut stream) = self.stream {
+            let mut buffer = [0; 8194]; // Increase buffer size is original, but this fixes parsing issues...//let mut buffer = [0; 1024];
+            match stream.read(&mut buffer) {
+                Ok(size) if size > 0 => {
+                    let events = self.parser.receive(&buffer[..size]);
+                    let parsed_text = self.handle_telnet_events(events);
+                                       // Print raw data in hexadecimal
+                    println!("Raw incoming data (hex): {:02X?}", buffer);
     
-                    let parsed_text = parse_ansi_codes(buffer.to_vec());
     
-                    // Append the parsed text-color pairs to received_data
-                    self.received_data.extend(parsed_text.clone());
-    
-                    // Debug message for received text
-                  //  println!("Received text: {:?}", parsed_text);
-    
+                   // Append the parsed text-color pairs to received_data
+                   self.received_data.extend(parsed_text.clone());
+   
+                   // Debug message for received text
+                   println!("Received text: {:?}", parsed_text);
                     Some(parsed_text.into_iter().flatten().collect())
                 }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => None, // Non-blocking read would block
                 _ => None,
             }
         } else {
             None
         }
     }
-    
-    
 
     pub fn write(&mut self, buffer: &[u8]) -> Result<(), String> {
-        if let Some(ref mut client) = self.client {
-            client.write(buffer).map_err(|e| format!("Write error: {}", e))?;
-            Ok(())
+        if let Some(ref mut stream) = self.stream {
+            match stream.write_all(buffer) {
+                Ok(_) => Ok(()),
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()), // Non-blocking write would block
+                Err(e) => Err(format!("Write error: {}", e)),
+            }
         } else {
             Err("Not connected".to_string())
         }
     }
 
     pub fn is_connected(&self) -> bool {
-        self.client.is_some()
+        self.stream.is_some()
     }
 
-// Assuming received_data is now a Vec<Vec<(String, Color32)>>
-// where each inner Vec represents a line of text
+    pub fn show(&mut self, ctx: &egui::Context) {
+        if self.connection_open {
+            let start_time = Instant::now();
+            egui::Window::new("Telnet Connection")
+                .resizable(true)
+                .show(ctx, |ui| {
+                    ui.label("Received Data:");
+                    ui.add_space(4.0);
 
-pub fn show(&mut self, ctx: &egui::Context) {
-    if self.connection_open {
-        let start_time = Instant::now();
-        egui::Window::new("Telnet Connection")
-            .resizable(true)
-            .show(ctx, |ui| {
-                let text_style = egui::TextStyle::Body;
-                let row_height = ui.text_style_height(&text_style);
-                let font_id = ui.style().text_styles[&egui::TextStyle::Body].clone();
-
-                ui.label("Received Data:");
-                ui.add_space(4.0);
-
-                ScrollArea::vertical()
-                .stick_to_bottom(true)
-                    .auto_shrink(false)
-             //       .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
-                    .show_rows(ui, row_height, self.received_data.len(), |ui, row_range| {
-                        for row in row_range {
-                            let line = &self.received_data[row];
-                            let mut job = egui::text::LayoutJob::default();
-                            for (text, color) in line {
-                                job.append(
-                                    text,
-                                    0.0,
-                                    egui::text::TextFormat {
-                                        font_id: font_id.clone(),
-                                        color: *color,
-                                        ..Default::default()
-                                    },
-                                );
+                    ScrollArea::vertical()
+                        .stick_to_bottom(true)
+                        .auto_shrink(false)
+                        .show_rows(ui, ui.text_style_height(&egui::TextStyle::Body), self.received_data.len(), |ui, row_range| {
+                            for row in row_range {
+                                let line = &self.received_data[row];
+                                let mut job = egui::text::LayoutJob::default();
+                                for (text, color) in line {
+                                    job.append(
+                                        text,
+                                        0.0,
+                                        egui::text::TextFormat {
+                                            font_id: ui.style().text_styles[&egui::TextStyle::Body].clone(),
+                                            color: *color,
+                                            ..Default::default()
+                                        },
+                                    );
+                                }
+                                ui.add(egui::Label::new(job));
                             }
-                            ui.add(egui::Label::new(job));
-                        }
-                        let elapsed = start_time.elapsed();
-                        println!("Visible rows rendered in: {:?}", elapsed);
-                    });
-            });
+                            let elapsed = start_time.elapsed();
+                            println!("Visible rows rendered in: {:?}", elapsed);
+                        });
+                });
+        }
+    }
+
+    fn handle_telnet_events(&mut self, events: Vec<TelnetEvents>) -> Vec<Vec<(String, Color32)>> {
+        let mut parsed_data: Vec<Vec<(String, Color32)>> = Vec::new();
+
+        for event in events {
+            match event {
+                TelnetEvents::DataReceive(data) => {
+                    // Convert Bytes to Vec<u8> before passing to parse_ansi_codes
+                    let parsed_text = parse_ansi_codes(data.to_vec());
+                    parsed_data.extend(parsed_text);
+                }
+                TelnetEvents::DataSend(data) => {
+                    if let Some(ref mut stream) = self.stream {
+                        let _ = stream.write_all(&data);
+                    }
+                }
+                _ => {
+                    // Handle other TelnetEvents as needed
+                }
+            }
+        }
+
+        parsed_data
     }
 }
-
-
-
-
-    
-}    
 
 impl Default for TelnetClient {
     fn default() -> Self {

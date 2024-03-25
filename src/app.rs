@@ -31,6 +31,7 @@ impl TemplateApp {
         style.visuals.code_bg_color = egui::Color32::from_rgb(45, 51, 59);
         style.visuals.hyperlink_color = egui::Color32::from_rgb(255, 0, 0);
         style.visuals.window_fill = egui::Color32::from_rgb(0, 0, 0); // menu bg, widget bg
+        style.visuals.panel_fill = egui::Color32::from_rgb(10, 10, 10); // entire window bg
         style.visuals.override_text_color = Some(egui::Color32::from_rgb(173, 186, 199));
         //style.visuals.window_corner_radius = 10.0;
         style.visuals.button_frame = true;
@@ -105,16 +106,23 @@ impl eframe::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 egui::warn_if_debug_build(ui);
-                ui.separator();
         
                 // Make the CentralPanel fill the entire width of the window
                 ui.set_max_width(ui.available_size().x);
         
                 // Add a text input field for the command
-                let mut command = String::new();
+                ui.add_space(16.0);
                 ui.horizontal(|ui| {
-                    ui.code_editor(&mut self.command);
-                    if ui.button("Send").clicked() | ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    // Calculate the width of the input box to fill the available width
+                    let input_box_width = ui.available_size().x - 100.0; // Adjust the subtraction as needed for your layout
+        
+                    // Use add_sized to set the size of the TextEdit
+                    let response = ui.add_sized([input_box_width, ui.text_style_height(&egui::TextStyle::Body)], |ui: &mut egui::Ui| {
+                        ui.text_edit_singleline(&mut self.command)
+                    });
+        
+                    // Add the "Send" button
+                    if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if !self.command.is_empty() {
                             // Append a newline character if required by the Telnet server
                             self.command.push('\n');
@@ -123,8 +131,11 @@ impl eframe::App for TemplateApp {
                             }
                             self.command.clear();
                         } else {
+                            self.command.push(' ');
                             println!("Command is empty"); // Debug print
                         }
+                        // Request focus for the TextEdit
+                        response.request_focus();
                     }
                 });
             });

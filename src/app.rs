@@ -19,6 +19,8 @@ pub struct TemplateApp {
     ip_address: String,
     port: u16,
     command: String,
+    command_history: Vec<String>,
+    current_history_index: usize,
 }
 
 
@@ -68,6 +70,8 @@ cc.egui_ctx.set_fonts(font);
             ip_address: "127.0.0.1".to_owned(),
             port: 23,
             command: String::new(),
+            command_history: Vec::new(),
+            current_history_index: 0,
         }
     }
 }
@@ -117,26 +121,48 @@ impl eframe::App for TemplateApp {
                     let input_box_width = ui.available_size().x - 100.0; // Adjust the subtraction as needed for your layout
         
                     // Use add_sized to set the size of the TextEdit
-                    let response = ui.add_sized([input_box_width, ui.text_style_height(&egui::TextStyle::Body)], |ui: &mut egui::Ui| {
-                        ui.text_edit_singleline(&mut self.command)
-                    });
-        
-                    // Add the "Send" button
-                    if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                        if !self.command.is_empty() {
-                            // Append a newline character if required by the Telnet server
-                            self.command.push('\n');
-                            if let Err(e) = self.telnet_client.write(self.command.as_bytes()) {
-                                eprintln!("Failed to send command: {}", e);
-                            }
-                            self.command.clear();
-                        } else {
-                            self.command.push(' ');
-                            println!("Command is empty"); // Debug print
-                        }
-                        // Request focus for the TextEdit
-                        response.request_focus();
-                    }
+                    // Inside the update method, where the command input field is handled
+let response = ui.add_sized([input_box_width, ui.text_style_height(&egui::TextStyle::Body)], |ui: &mut egui::Ui| {
+    ui.text_edit_singleline(&mut self.command)
+});
+
+// Check for key presses
+if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+    if self.current_history_index > 0 {
+        self.current_history_index -= 1;
+        self.command = self.command_history[self.current_history_index].trim().to_string();
+    } else { 
+        // There is no command history, so do nothing
+    }
+} else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+    if self.current_history_index < self.command_history.len() - 1 {
+        self.current_history_index += 1;
+        self.command = self.command_history[self.current_history_index].trim().to_string();
+    } else {
+        self.command.clear();
+        self.current_history_index = self.command_history.len();
+    }
+}
+
+// Add the command to the history when it's submitted
+if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+    if !self.command.is_empty() {
+        // Append a newline character if required by the Telnet server
+        self.command.push('\n');
+        if let Err(e) = self.telnet_client.write(self.command.as_bytes()) {
+            eprintln!("Failed to send command: {}", e);
+        }
+        // Add the command to the history
+        self.command_history.push(self.command.clone());
+        self.current_history_index = self.command_history.len(); // Reset the index to the end of the history
+        self.command.clear();
+    } else {
+        self.command.push(' ');
+        println!("Command is empty"); // Debug print
+    }
+    // Request focus for the TextEdit
+    response.request_focus();
+}
                 });
             });
         });

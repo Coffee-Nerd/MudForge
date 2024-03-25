@@ -1,11 +1,10 @@
 use egui::Window;
-use std::cell::RefCell; 
-mod telnet;
-mod miniwindow;
+use std::cell::RefCell;
 mod ansi_color;
-use miniwindow::WindowResizeTest;
+mod miniwindow;
+mod telnet;
 use egui::FontFamily;
-
+use miniwindow::WindowResizeTest;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -23,7 +22,6 @@ pub struct TemplateApp {
     current_history_index: usize,
 }
 
-
 impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Set the custom style
@@ -39,24 +37,31 @@ impl TemplateApp {
         style.visuals.button_frame = true;
         style.visuals.collapsing_header_frame = true;
         style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(35, 39, 46);
-        style.visuals.widgets.noninteractive.fg_stroke = egui::Stroke::new(0., egui::Color32::from_rgb(173, 186, 199));
+        style.visuals.widgets.noninteractive.fg_stroke =
+            egui::Stroke::new(0., egui::Color32::from_rgb(173, 186, 199));
         style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
         style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(45, 51, 59);
         style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 51, 59);
         style.visuals.widgets.open.bg_fill = egui::Color32::from_rgb(45, 51, 59);
         cc.egui_ctx.set_style(style);
-    
-// Custom font
-let font_ReFixedysMono = include_bytes!("data/refixedsys-mono.otf").to_vec();
-let mut font = egui::FontDefinitions::default();
-font.font_data.insert(
-    "ReFixedys Mono".to_string(),
-    egui::FontData::from_owned(font_ReFixedysMono),
-);
-font.families.get_mut(&FontFamily::Monospace).unwrap().insert(0, "ReFixedys Mono".to_string());
-font.families.get_mut(&FontFamily::Proportional).unwrap().insert(0, "ReFixedys Mono".to_string());
-cc.egui_ctx.set_fonts(font);
-    
+
+        // Custom font
+        let font_ReFixedysMono = include_bytes!("data/refixedsys-mono.otf").to_vec();
+        let mut font = egui::FontDefinitions::default();
+        font.font_data.insert(
+            "ReFixedys Mono".to_string(),
+            egui::FontData::from_owned(font_ReFixedysMono),
+        );
+        font.families
+            .get_mut(&FontFamily::Monospace)
+            .unwrap()
+            .insert(0, "ReFixedys Mono".to_string());
+        font.families
+            .get_mut(&FontFamily::Proportional)
+            .unwrap()
+            .insert(0, "ReFixedys Mono".to_string());
+        cc.egui_ctx.set_fonts(font);
+
         // Initialize the rest of the application
         if let Some(storage) = cc.storage {
             return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
@@ -75,7 +80,7 @@ cc.egui_ctx.set_fonts(font);
         }
     }
 }
-    
+
 impl eframe::App for TemplateApp {
     fn save(&mut self, storage: &mut dyn eframe::Storage) {
         eframe::set_value(storage, eframe::APP_KEY, self);
@@ -83,12 +88,24 @@ impl eframe::App for TemplateApp {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
-            ("File", vec![
-                ("Quit", Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close))),  
-            ]),
-            ("Connection", vec![
-                ("New", Box::new(|s, _| { s.show_connection_prompt.replace(true); })), // Updated
-            ]),
+            (
+                "File",
+                vec![(
+                    "Quit",
+                    Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close)),
+                )],
+            ),
+            (
+                "Connection",
+                vec![
+                    (
+                        "New",
+                        Box::new(|s, _| {
+                            s.show_connection_prompt.replace(true);
+                        }),
+                    ), // Updated
+                ],
+            ),
         ];
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
@@ -110,65 +127,80 @@ impl eframe::App for TemplateApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 egui::warn_if_debug_build(ui);
-        
+
                 // Make the CentralPanel fill the entire width of the window
                 ui.set_max_width(ui.available_size().x);
-        
+
                 // Add a text input field for the command
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     // Calculate the width of the input box to fill the available width
                     let input_box_width = ui.available_size().x - 100.0; // Adjust the subtraction as needed for your layout
-        
+
                     // Use add_sized to set the size of the TextEdit
                     // Inside the update method, where the command input field is handled
-let response = ui.add_sized([input_box_width, ui.text_style_height(&egui::TextStyle::Body)], |ui: &mut egui::Ui| {
-    ui.text_edit_singleline(&mut self.command)
-});
+                    let response = ui.add_sized(
+                        [
+                            input_box_width,
+                            ui.text_style_height(&egui::TextStyle::Body),
+                        ],
+                        |ui: &mut egui::Ui| ui.text_edit_singleline(&mut self.command),
+                    );
 
-// Check for key presses
-if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-    if self.current_history_index > 0 {
-        self.current_history_index -= 1;
-        self.command = self.command_history[self.current_history_index].trim().to_string();
-    } else { 
-        // There is no command history, so do nothing
-    }
-} else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
-    if self.current_history_index < self.command_history.len() - 1 {
-        self.current_history_index += 1;
-        self.command = self.command_history[self.current_history_index].trim().to_string();
-    } else {
-        self.command.clear();
-        self.current_history_index = self.command_history.len();
-    }
-}
+                    // Check for key presses
+                    if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
+                        if self.current_history_index > 0 {
+                            self.current_history_index -= 1;
+                            self.command = self.command_history[self.current_history_index]
+                                .trim()
+                                .to_string();
+                        } else {
+                            // There is no command history, so do nothing
+                        }
+                    } else if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
+                        if self.current_history_index < self.command_history.len() - 1 {
+                            self.current_history_index += 1;
+                            self.command = self.command_history[self.current_history_index]
+                                .trim()
+                                .to_string();
+                        } else {
+                            self.command.clear();
+                            self.current_history_index = self.command_history.len();
+                        }
+                    }
 
-// Add the command to the history when it's submitted
-if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-    if !self.command.is_empty() {
-        // Append a newline character if required by the Telnet server
-        self.command.push('\n');
-        if let Err(e) = self.telnet_client.write(self.command.as_bytes()) {
-            eprintln!("Failed to send command: {}", e);
-        }
-        // Add the command to the history
-        self.command_history.push(self.command.clone());
-        self.current_history_index = self.command_history.len(); // Reset the index to the end of the history
-        self.command.clear();
-    } else {
-        self.command.push(' ');
-        println!("Command is empty"); // Debug print
-    }
-    // Request focus for the TextEdit
-    response.request_focus();
-}
+                    // Add the command to the history when it's submitted
+                    if ui.button("Send").clicked()
+                        || response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                    {
+                        if !self.command.is_empty() {
+                            // Append a newline character if required by the Telnet server
+                            self.command.push('\n');
+                            if let Err(e) = self.telnet_client.write(self.command.as_bytes()) {
+                                eprintln!("Failed to send command: {}", e);
+                            }
+                            // Check if the command is the same as the last command in the history
+                            if self.command_history.is_empty()
+                                || *self.command_history.last().unwrap() != self.command
+                            {
+                                // Add the command to the history only if it's different from the last command
+                                self.command_history.push(self.command.clone());
+                            }
+                            self.current_history_index = self.command_history.len(); // Reset the index to the end of the history
+                            self.command.clear();
+                        } else {
+                            self.command.push(' ');
+                            println!("Command is empty"); // Debug print
+                        }
+                        // Request focus for the TextEdit
+                        response.request_focus();
+                    }
                 });
             });
         });
 
-        let mut open = *self.show_connection_prompt.borrow(); 
-        let mut close_window = false; 
+        let mut open = *self.show_connection_prompt.borrow();
+        let mut close_window = false;
 
         if open {
             egui::Window::new("Connect to Telnet Server")
@@ -178,18 +210,18 @@ if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pr
                 .default_height(300.0)
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                    ui.label("Ip Address:    ");
-                    ui.text_edit_singleline(&mut self.ip_address);
+                        ui.label("Ip Address:    ");
+                        ui.text_edit_singleline(&mut self.ip_address);
                     });
                     ui.horizontal(|ui| {
                         ui.label("Port number:");
                         ui.text_edit_singleline(&mut self.port.to_string());
-                        });
+                    });
                     if ui.button("Connect").clicked() {
                         if let Err(e) = self.telnet_client.connect(&self.ip_address, self.port) {
                             eprintln!("Connection error: {}", e);
                         }
-                        close_window = true; 
+                        close_window = true;
                     }
                 });
 
@@ -200,8 +232,8 @@ if ui.button("Send").clicked() || response.lost_focus() && ui.input(|i| i.key_pr
 
         if self.telnet_client.is_connected() {
             if let Some(data) = self.telnet_client.read_nonblocking() {
-                    // Request a repaint for the next frame
-            //    println!("Received data: {}", data.text());
+                // Request a repaint for the next frame
+                //    println!("Received data: {}", data.text());
             }
             ctx.request_repaint();
         }

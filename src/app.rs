@@ -2,11 +2,12 @@ use egui::Window;
 use std::cell::RefCell;
 mod ansi_color;
 mod miniwindow;
+mod styles;
 mod telnet;
 use egui::FontFamily;
 use miniwindow::WindowResizeTest;
+use std::collections::VecDeque;
 use std::time::Instant;
-
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
 pub struct TemplateApp {
@@ -24,46 +25,22 @@ pub struct TemplateApp {
     fps: f64,
     #[serde(skip)]
     last_frame_time: Option<Instant>,
+    #[serde(skip)]
+    last_frame_update: Option<Instant>,
+    #[serde(skip)]
+    frame_durations: VecDeque<f64>, // Use VecDeque for efficient push/pop operations
+    #[serde(skip)]
+    last_update_time: Option<Instant>,
 }
 
 impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Set the custom style
-        let mut style: egui::Style = (*cc.egui_ctx.style()).clone();
-        style.visuals.extreme_bg_color = egui::Color32::from_rgb(45, 51, 59); // text box background
-        style.visuals.faint_bg_color = egui::Color32::from_rgb(45, 51, 59);
-        style.visuals.code_bg_color = egui::Color32::from_rgb(45, 51, 59);
-        style.visuals.hyperlink_color = egui::Color32::from_rgb(255, 0, 0);
-        style.visuals.window_fill = egui::Color32::from_rgb(0, 0, 0); // menu bg, widget bg
-        style.visuals.panel_fill = egui::Color32::from_rgb(10, 10, 10); // entire window bg
-        style.visuals.override_text_color = Some(egui::Color32::from_rgb(173, 186, 199));
-        //style.visuals.window_corner_radius = 10.0;
-        style.visuals.button_frame = true;
-        style.visuals.collapsing_header_frame = true;
-        style.visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(35, 39, 46);
-        style.visuals.widgets.noninteractive.fg_stroke =
-            egui::Stroke::new(0., egui::Color32::from_rgb(173, 186, 199));
-        style.visuals.widgets.inactive.bg_fill = egui::Color32::TRANSPARENT;
-        style.visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(45, 51, 59);
-        style.visuals.widgets.active.bg_fill = egui::Color32::from_rgb(45, 51, 59);
-        style.visuals.widgets.open.bg_fill = egui::Color32::from_rgb(45, 51, 59);
+        let style = styles::default_style(); // Use the default style function
         cc.egui_ctx.set_style(style);
 
-        // Custom font
-        let font_ReFixedysMono = include_bytes!("data/refixedsys-mono.otf").to_vec();
-        let mut font = egui::FontDefinitions::default();
-        font.font_data.insert(
-            "ReFixedys Mono".to_string(),
-            egui::FontData::from_owned(font_ReFixedysMono),
-        );
-        font.families
-            .get_mut(&FontFamily::Monospace)
-            .unwrap()
-            .insert(0, "ReFixedys Mono".to_string());
-        font.families
-            .get_mut(&FontFamily::Proportional)
-            .unwrap()
-            .insert(0, "ReFixedys Mono".to_string());
+        // Set the custom font
+        let font = styles::custom_font(); // Use the custom font function
         cc.egui_ctx.set_fonts(font);
 
         // Initialize the rest of the application
@@ -83,6 +60,9 @@ impl TemplateApp {
             current_history_index: 0,
             fps: 0.0,
             last_frame_time: None,
+            last_frame_update: None,
+            frame_durations: VecDeque::with_capacity(10),
+            last_update_time: None,
         }
     }
 }
@@ -114,13 +94,29 @@ impl eframe::App for TemplateApp {
             ),
         ];
 
-        // Calculate FPS
         let now = Instant::now();
         if let Some(last_frame_time) = self.last_frame_time {
-            let elapsed = now.duration_since(last_frame_time);
-            self.fps = 1.0 / elapsed.as_secs_f64();
+            let elapsed = now.duration_since(last_frame_time).as_secs_f64();
+            self.frame_durations.push_front(elapsed);
+            if self.frame_durations.len() > 10 {
+                self.frame_durations.pop_back();
+            }
         }
         self.last_frame_time = Some(now);
+
+        if let Some(last_frame_update) = self.last_frame_update {
+            if now.duration_since(last_frame_update).as_secs() >= 1 {
+                // Update average FPS calculation
+                let total_duration: f64 = self.frame_durations.iter().sum();
+                self.fps = 10.0 / total_duration; // Average over the last 10 seconds
+
+                // Update last update time
+                self.last_frame_update = Some(now);
+            }
+        } else {
+            // First update, initialize last update time
+            self.last_frame_update = Some(now);
+        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -220,7 +216,7 @@ impl eframe::App for TemplateApp {
 
         if open {
             egui::Window::new("Connect to Telnet Server")
-                .open(&mut open)
+                .open(&mut self.show_connection_prompt.borrow_mut())
                 .vscroll(true)
                 .resizable(true)
                 .default_height(300.0)

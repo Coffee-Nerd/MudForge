@@ -88,6 +88,7 @@ impl TelnetClient {
             let start_time = Instant::now();
             egui::Window::new("Telnet Connection")
                 .resizable(true)
+                //.frame(egui::Frame{fill:egui::Color32::TRANSPARENT, ..Default::default()})
                 .show(ctx, |ui| {
                     ui.label("Received Data:");
                     ui.add_space(4.0);

@@ -5,6 +5,7 @@ mod miniwindow;
 mod telnet;
 use egui::FontFamily;
 use miniwindow::WindowResizeTest;
+use std::time::Instant;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -20,6 +21,9 @@ pub struct TemplateApp {
     command: String,
     command_history: Vec<String>,
     current_history_index: usize,
+    fps: f64,
+    #[serde(skip)]
+    last_frame_time: Option<Instant>,
 }
 
 impl TemplateApp {
@@ -77,6 +81,8 @@ impl TemplateApp {
             command: String::new(),
             command_history: Vec::new(),
             current_history_index: 0,
+            fps: 0.0,
+            last_frame_time: None,
         }
     }
 }
@@ -108,6 +114,14 @@ impl eframe::App for TemplateApp {
             ),
         ];
 
+        // Calculate FPS
+        let now = Instant::now();
+        if let Some(last_frame_time) = self.last_frame_time {
+            let elapsed = now.duration_since(last_frame_time);
+            self.fps = 1.0 / elapsed.as_secs_f64();
+        }
+        self.last_frame_time = Some(now);
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 for &(menu_name, ref submenus) in menus {
@@ -126,8 +140,10 @@ impl eframe::App for TemplateApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
-                egui::warn_if_debug_build(ui);
-
+                ui.horizontal(|ui| {
+                    egui::warn_if_debug_build(ui);
+                    ui.label(format!("FPS: {:.0}", self.fps));
+                });
                 // Make the CentralPanel fill the entire width of the window
                 ui.set_max_width(ui.available_size().x);
 
@@ -233,7 +249,7 @@ impl eframe::App for TemplateApp {
         if self.telnet_client.is_connected() {
             if let Some(data) = self.telnet_client.read_nonblocking() {
                 // Request a repaint for the next frame
-                //    println!("Received data: {}", data.text());
+                // println!("Received data: {}", data.text());
             }
             ctx.request_repaint();
         }

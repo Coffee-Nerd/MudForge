@@ -22,11 +22,14 @@ MudForge is a cutting-edge, highly performant MUD (Multi-User Dungeon) client wr
 
 ## Installation
 
-(Provide detailed steps on how to install MudForge.)
+Currently if you'd like to install and use MudForge you'll need to download the code, or clone the repo, and use cargo run if you have Rust installed.
+
+I will make an installer soon.
 
 ## Usage
 
-(Provide a quick start guide on how to use MudForge, including how to connect to a server.)
+Currently there is only basic functionality included. If you'd like to connect to a mud, simply go to "Connection" -> "New" in the menu, and enter your
+host name and port number. Then you'll be connected to your game! Enjoy!
 
 ## Contributing
 
@@ -48,8 +51,8 @@ Distributed under the MIT License. See `LICENSE` for more information.
 
 ## Contact
 
-(Provide your contact information or the best way to reach you and/or the core team.)
+You can contact me on Discord under the username coffee_nerd.
 
 ## Acknowledgements
 
-- (List any contributors, libraries, or other resources that you want to acknowledge.)
+- This project is built using EGUI, and eframe, so thanks to them for offering a much more simple GUI building experience.

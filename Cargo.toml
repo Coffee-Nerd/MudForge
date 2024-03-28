@@ -7,8 +7,8 @@ rust-version = "1.72"
 
 
 [dependencies]
-egui = "0.26.0"
-eframe = { version = "0.26.0", default-features = false, features = [
+egui = "0.27.0"
+eframe = { version = "0.27.0", default-features = false, features = [
     "accesskit",     # Make egui comptaible with screen readers. NOTE: adds a lot of dependencies.
     "default_fonts", # Embed the default egui fonts.
     "glow",          # Use the glow rendering backend. Alternative: "wgpu".
@@ -19,13 +19,11 @@ log = "0.4"
 # You only need serde if you want app persistence:
 serde = { version = "1", features = ["derive"] }
 lazy_static = "1.4.0"
-ansi_term = "0.12.1"
-telnet = "0.2.1"
 libmudtelnet = "2.0.1"
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-env_logger = "0.10"
+env_logger = "0.11"
 
 # web:
 [target.'cfg(target_arch = "wasm32")'.dependencies]

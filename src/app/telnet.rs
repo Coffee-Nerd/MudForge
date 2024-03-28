@@ -91,12 +91,9 @@ impl TelnetClient {
                 .resizable(true)
                 //.frame(egui::Frame{fill:egui::Color32::TRANSPARENT, ..Default::default()})
                 .show(ctx, |ui| {
-                    ui.label("Received Data:");
-                    ui.add_space(4.0);
-
                     ScrollArea::vertical()
-                        .stick_to_bottom(true)
                         .auto_shrink(false)
+                        .stick_to_bottom(true)
                         .show_rows(
                             ui,
                             ui.text_style_height(&egui::TextStyle::Body),

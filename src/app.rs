@@ -1,10 +1,8 @@
-use egui::Window;
 use std::cell::RefCell;
 mod ansi_color;
 mod miniwindow;
 mod styles;
 mod telnet;
-use egui::FontFamily;
 use miniwindow::WindowResizeTest;
 use std::collections::VecDeque;
 use std::time::Instant;
@@ -93,30 +91,6 @@ impl eframe::App for TemplateApp {
                 ],
             ),
         ];
-
-        let now = Instant::now();
-        if let Some(last_frame_time) = self.last_frame_time {
-            let elapsed = now.duration_since(last_frame_time).as_secs_f64();
-            self.frame_durations.push_front(elapsed);
-            if self.frame_durations.len() > 10 {
-                self.frame_durations.pop_back();
-            }
-        }
-        self.last_frame_time = Some(now);
-
-        if let Some(last_frame_update) = self.last_frame_update {
-            if now.duration_since(last_frame_update).as_secs() >= 1 {
-                // Update average FPS calculation
-                let total_duration: f64 = self.frame_durations.iter().sum();
-                self.fps = 10.0 / total_duration; // Average over the last 10 seconds
-
-                // Update last update time
-                self.last_frame_update = Some(now);
-            }
-        } else {
-            // First update, initialize last update time
-            self.last_frame_update = Some(now);
-        }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -211,7 +185,7 @@ impl eframe::App for TemplateApp {
             });
         });
 
-        let mut open = *self.show_connection_prompt.borrow();
+        let open = *self.show_connection_prompt.borrow();
         let mut close_window = false;
 
         if open {
@@ -246,6 +220,29 @@ impl eframe::App for TemplateApp {
             if let Some(data) = self.telnet_client.read_nonblocking() {
                 // Request a repaint for the next frame
                 // println!("Received data: {}", data.text());
+            }
+            let now = Instant::now();
+            if let Some(last_frame_time) = self.last_frame_time {
+                let elapsed = now.duration_since(last_frame_time).as_secs_f64();
+                self.frame_durations.push_front(elapsed);
+                if self.frame_durations.len() > 10 {
+                    self.frame_durations.pop_back();
+                }
+            }
+            self.last_frame_time = Some(now);
+
+            if let Some(last_frame_update) = self.last_frame_update {
+                if now.duration_since(last_frame_update).as_secs() >= 1 {
+                    // Update average FPS calculation
+                    let total_duration: f64 = self.frame_durations.iter().sum();
+                    self.fps = 10.0 / total_duration; // Average over the last 10 seconds
+
+                    // Update last update time
+                    self.last_frame_update = Some(now);
+                }
+            } else {
+                // First update, initialize last update time
+                self.last_frame_update = Some(now);
             }
             ctx.request_repaint();
         }

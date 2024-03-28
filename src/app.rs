@@ -1,9 +1,11 @@
 use std::cell::RefCell;
-mod ansi_color;
+pub mod ansi_color;
+pub mod functions;
 mod miniwindow;
 mod styles;
-mod telnet;
+pub mod telnet;
 use miniwindow::WindowResizeTest;
+use mlua::Lua;
 use std::collections::VecDeque;
 use std::time::Instant;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
@@ -29,6 +31,10 @@ pub struct TemplateApp {
     frame_durations: VecDeque<f64>, // Use VecDeque for efficient push/pop operations
     #[serde(skip)]
     last_update_time: Option<Instant>,
+    show_lua_execution_window: RefCell<bool>,
+    #[serde(skip)]
+    lua: Lua,
+    lua_code: String,
 }
 
 impl TemplateApp {
@@ -61,6 +67,9 @@ impl TemplateApp {
             last_frame_update: None,
             frame_durations: VecDeque::with_capacity(10),
             last_update_time: None,
+            show_lua_execution_window: RefCell::new(false),
+            lua: Lua::new(),
+            lua_code: String::new(),
         }
     }
 }
@@ -81,14 +90,12 @@ impl eframe::App for TemplateApp {
             ),
             (
                 "Connection",
-                vec![
-                    (
-                        "New",
-                        Box::new(|s, _| {
-                            s.show_connection_prompt.replace(true);
-                        }),
-                    ), // Updated
-                ],
+                vec![(
+                    "New",
+                    Box::new(|s, _| {
+                        s.show_connection_prompt.replace(true);
+                    }),
+                )],
             ),
         ];
 
@@ -121,7 +128,7 @@ impl eframe::App for TemplateApp {
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
                     // Calculate the width of the input box to fill the available width
-                    let input_box_width = ui.available_size().x - 100.0; // Adjust the subtraction as needed for your layout
+                    let input_box_width = ui.available_size().x - 100.0;
 
                     // Use add_sized to set the size of the TextEdit
                     // Inside the update method, where the command input field is handled
@@ -132,6 +139,33 @@ impl eframe::App for TemplateApp {
                         ],
                         |ui: &mut egui::Ui| ui.text_edit_singleline(&mut self.command),
                     );
+
+                    if ctx.input(|i| i.key_down(egui::Key::Escape) && i.key_pressed(egui::Key::I)) {
+                        let mut open = self.show_lua_execution_window.borrow_mut();
+                        *open = !*open;
+                    }
+
+                    let open = *self.show_lua_execution_window.borrow();
+                    if open {
+                        egui::Window::new("Lua Execution")
+                            .open(&mut self.show_lua_execution_window.borrow_mut())
+                            .show(ctx, |ui| {
+                                ui.label("Enter Lua code to execute:");
+                                ui.add_space(8.0);
+
+                                // Use the lua_code field for the TextEdit
+                                ui.code_editor(&mut self.lua_code);
+
+                                ui.add_space(8.0);
+                                if ui.button("Execute").clicked() {
+                                    // Execute the Lua code here using Lua interpreter
+                                    match self.lua.load(&self.lua_code).exec() {
+                                        Ok(_) => println!("Lua code executed successfully."),
+                                        Err(e) => println!("Error executing Lua code: {}", e),
+                                    }
+                                }
+                            });
+                    }
 
                     // Check for key presses
                     if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
@@ -176,7 +210,7 @@ impl eframe::App for TemplateApp {
                             self.command.clear();
                         } else {
                             self.command.push(' ');
-                            println!("Command is empty"); // Debug print
+                            println!("Command is empty");
                         }
                         // Request focus for the TextEdit
                         response.request_focus();

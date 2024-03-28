@@ -1,5 +1,5 @@
 use crate::app::ansi_color::COLOR_MAP;
-use egui::{Color32, Context, ScrollArea};
+use egui::{Color32, ScrollArea};
 use libmudtelnet::events::TelnetEvents;
 use libmudtelnet::Parser; // Adjusted import for TelnetEvents
 use std::io::{Read, Write};
@@ -21,6 +21,10 @@ impl TelnetClient {
             received_data: Vec::new(),
             parser: Parser::new(),
         }
+    }
+    pub fn append_text(&mut self, text: &str, color: Color32) {
+        // Append the text and color to the received_data vector
+        self.received_data.push(vec![(text.to_string(), color)]);
     }
 
     pub fn connect(&mut self, ip_address: &str, port: u16) -> Result<(), String> {
@@ -118,7 +122,7 @@ impl TelnetClient {
                                     ui.add(egui::Label::new(job));
                                 }
                                 let elapsed = start_time.elapsed();
-                                println!("Visible rows rendered in: {:?}", elapsed);
+                                //  println!("Visible rows rendered in: {:?}", elapsed);
                             },
                         );
                 });

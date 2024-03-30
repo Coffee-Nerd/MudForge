@@ -2,11 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod app;
-
-use app::functions::init_lua;
-use app::telnet::TelnetClient;
 use mlua::prelude::*;
-use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 struct CustomError(String);
@@ -28,10 +24,6 @@ impl std::error::Error for CustomError {}
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-
-    let lua = Lua::new();
-    let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
-    init_lua(&lua, telnet_client).map_err(CustomError::from)?;
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

@@ -4,9 +4,14 @@ pub mod functions;
 mod miniwindow;
 mod styles;
 pub mod telnet;
+use crate::app::functions::init_lua;
+use crate::app::telnet::TelnetClient;
+use egui::Color32;
+use egui::TextBuffer;
 use miniwindow::WindowResizeTest;
-use mlua::Lua;
+use mlua::{Function, Lua};
 use std::collections::VecDeque;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -35,28 +40,51 @@ pub struct TemplateApp {
     #[serde(skip)]
     lua: Lua,
     lua_code: String,
+    lua_output_buffer: Arc<Mutex<String>>,
 }
 
 impl TemplateApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        println!("Creating new TemplateApp instance");
         // Set the custom style
-        let style = styles::default_style(); // Use the default style function
+        let style = styles::default_style();
         cc.egui_ctx.set_style(style);
 
-        // Set the custom font
-        let font = styles::custom_font(); // Use the custom font function
+        let font = styles::custom_font();
         cc.egui_ctx.set_fonts(font);
 
-        // Initialize the rest of the application
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        // Create a new TelnetClient instance wrapped in an Arc<Mutex>
+        let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
+
+        // Create a new Lua instance
+        let lua = Lua::new();
+        println!("Lua instance address in TemplateApp: {:p}", &lua);
+
+        // After initializing the Lua environment in the new method
+        if let Err(err) = init_lua(&lua, telnet_client.clone()) {
+            eprintln!("Failed to initialize Lua: {:?}", err);
+            panic!("Failed to initialize Lua");
         }
-        Self {
+
+        // Set test_value in the Lua environment (for testing)
+        lua.globals()
+            .set("test_value", "Value set in new method")
+            .unwrap();
+
+        // Call the print function directly (for testing)
+        if let Err(err) = lua
+            .load(r#"print("Direct call from TemplateApp::new")"#)
+            .exec()
+        {
+            eprintln!("Error calling print function directly: {:?}", err);
+        }
+        // Create a new TemplateApp instance
+        let app = TemplateApp {
             label: "Hello World!".to_owned(),
             value: 2.7,
             window_resize_test: WindowResizeTest::new(),
             telnet_client: telnet::TelnetClient::new(),
-            show_connection_prompt: RefCell::new(false), // Initialize
+            show_connection_prompt: RefCell::new(false),
             ip_address: "127.0.0.1".to_owned(),
             port: 23,
             command: String::new(),
@@ -68,9 +96,17 @@ impl TemplateApp {
             frame_durations: VecDeque::with_capacity(10),
             last_update_time: None,
             show_lua_execution_window: RefCell::new(false),
-            lua: Lua::new(),
+            lua,
             lua_code: String::new(),
+            lua_output_buffer: Arc::new(Mutex::new(String::new())),
+        };
+
+        // Initialize the rest, if needed
+        if let Some(storage) = cc.storage {
+            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
+
+        app
     }
 }
 
@@ -80,6 +116,15 @@ impl eframe::App for TemplateApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Simplify the Lua script to call the print function and return a value
+        let lua_script = r#"
+        print("Direct call from update")
+        return "Return value from print"
+    "#;
+        match self.lua.load(lua_script).eval::<String>() {
+            Ok(return_value) => println!("Return value from Lua execution: {}", return_value),
+            Err(err) => eprintln!("Error in Lua execution: {:?}", err),
+        }
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
             (
                 "File",
@@ -98,7 +143,7 @@ impl eframe::App for TemplateApp {
                 )],
             ),
         ];
-
+        println!("Lua instance address in eframe: {:p}", &self.lua);
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 for &(menu_name, ref submenus) in menus {
@@ -158,10 +203,26 @@ impl eframe::App for TemplateApp {
 
                                 ui.add_space(8.0);
                                 if ui.button("Execute").clicked() {
-                                    // Execute the Lua code here using Lua interpreter
                                     match self.lua.load(&self.lua_code).exec() {
-                                        Ok(_) => println!("Lua code executed successfully."),
-                                        Err(e) => println!("Error executing Lua code: {}", e),
+                                        Ok(_) => {
+                                            println!(
+                                                "Lua instance address in Execute: {:p}",
+                                                &self.lua
+                                            );
+
+                                            // Send success message to Telnet client
+                                            self.telnet_client.append_text(
+                                                "Lua code executed successfully.\n",
+                                                Color32::GREEN,
+                                            );
+                                        }
+                                        Err(e) => {
+                                            // Send error message to Telnet client
+                                            let error_message =
+                                                format!("Error executing Lua code: {}\n", e);
+                                            self.telnet_client
+                                                .append_text(&error_message, Color32::RED);
+                                        }
                                     }
                                 }
                             });
@@ -251,7 +312,7 @@ impl eframe::App for TemplateApp {
         }
 
         if self.telnet_client.is_connected() {
-            if let Some(data) = self.telnet_client.read_nonblocking() {
+            if let Some(_data) = self.telnet_client.read_nonblocking() {
                 // Request a repaint for the next frame
                 // println!("Received data: {}", data.text());
             }
@@ -279,6 +340,14 @@ impl eframe::App for TemplateApp {
                 self.last_frame_update = Some(now);
             }
             ctx.request_repaint();
+        }
+        if let Ok(mut buffer) = self.lua_output_buffer.lock() {
+            if !buffer.is_empty() {
+                let output = buffer.take();
+
+                // Append the output to the TelnetClient's received data
+                self.telnet_client.append_text(&output, Color32::WHITE); // Assuming white as the default output color
+            }
         }
         self.window_resize_test.show(ctx);
         self.telnet_client.show(ctx);

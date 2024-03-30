@@ -3,7 +3,6 @@ use egui::Color32;
 use mlua::prelude::*;
 use std::sync::{Arc, Mutex};
 
-// Define a struct that holds a reference to TelnetClient
 pub struct LuaFunctions {
     telnet_client: Arc<Mutex<TelnetClient>>,
 }
@@ -11,6 +10,7 @@ pub struct LuaFunctions {
 impl LuaFunctions {
     // Method for the print function
     pub fn print(&self, text: String) -> LuaResult<()> {
+        println!("this is being called");
         let mut telnet_client = self.telnet_client.lock().unwrap();
         telnet_client.append_text(&text, Color32::WHITE);
         Ok(())
@@ -32,20 +32,37 @@ impl LuaFunctions {
 
 // Function to initialize and expose the functions to Lua
 pub fn init_lua(lua: &Lua, telnet_client: Arc<Mutex<TelnetClient>>) -> LuaResult<()> {
+    println!("Initializing Lua environment with custom print functions...");
+    println!("Lua instance address in init_lua: {:p}", lua);
+
     let print_functions = LuaFunctions {
         telnet_client: telnet_client.clone(),
     };
     let color_print_functions = LuaFunctions { telnet_client };
 
     let globals = lua.globals();
-
     let print_function = lua.create_function(move |_, text: String| print_functions.print(text))?;
     globals.set("print", print_function)?;
+
+    println!("Custom print function set in Lua environment.");
+    let test_script = r#"
+       print("Hello from Lua!")
+       test_value = (test_value or 0) + 1
+       print('Test value:', test_value)
+    "#;
+
+    match lua.load(test_script).exec() {
+        Ok(_) => println!("Test script executed successfully."),
+        Err(e) => println!("Error executing test script: {:?}", e),
+    }
 
     let color_print_function = lua.create_function(move |_, args: (String, String)| {
         color_print_functions.color_print(args)
     })?;
     globals.set("color_print", color_print_function)?;
+    println!("Custom color_print function set in Lua environment.");
+
+    println!("Lua environment initialized successfully.");
 
     Ok(())
 }

@@ -23,7 +23,7 @@ impl TelnetClient {
         }
     }
     pub fn append_text(&mut self, text: &str, color: Color32) {
-        // Append the text and color to the received_data vector
+        println!("Appending to Telnet: {}", text); // Debug print
         self.received_data.push(vec![(text.to_string(), color)]);
     }
 
@@ -156,6 +156,7 @@ impl TelnetClient {
 
 impl Default for TelnetClient {
     fn default() -> Self {
+        println!("Creating default TelnetClient instance");
         Self::new()
     }
 }

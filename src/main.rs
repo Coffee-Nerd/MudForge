@@ -3,10 +3,14 @@
 
 mod app;
 
-use app::functions::init_lua;
 use app::telnet::TelnetClient;
-use mlua::prelude::*;
-use std::sync::{Arc, Mutex};
+use lazy_static::lazy_static;
+use mlua::prelude::*; // Use prelude to include Lua and LuaError
+use std::sync::Mutex; // Add this line to use the TelnetClient struct
+
+lazy_static! {
+    pub static ref TELNET_CLIENT: Mutex<TelnetClient> = Mutex::new(TelnetClient::new());
+}
 
 #[derive(Debug)]
 struct CustomError(String);
@@ -28,10 +32,6 @@ impl std::error::Error for CustomError {}
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     env_logger::init();
-
-    let lua = Lua::new();
-    let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
-    init_lua(&lua, telnet_client).map_err(CustomError::from)?;
 
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()

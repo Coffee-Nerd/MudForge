@@ -2,7 +2,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")] // hide console window on Windows in release
 
 mod app;
-use mlua::prelude::*;
+
+use app::telnet::TelnetClient;
+use lazy_static::lazy_static;
+use mlua::prelude::*; // Use prelude to include Lua and LuaError
+use std::sync::Mutex; // Add this line to use the TelnetClient struct
+
+lazy_static! {
+    pub static ref TELNET_CLIENT: Mutex<TelnetClient> = Mutex::new(TelnetClient::new());
+}
 
 #[derive(Debug)]
 struct CustomError(String);

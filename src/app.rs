@@ -38,7 +38,7 @@ pub struct TemplateApp {
     last_update_time: Option<Instant>,
     show_lua_execution_window: RefCell<bool>,
     #[serde(skip)]
-    lua: Lua,
+    lua: Option<Lua>,
     lua_code: String,
     lua_output_buffer: Arc<Mutex<String>>,
 }
@@ -53,31 +53,6 @@ impl TemplateApp {
         let font = styles::custom_font();
         cc.egui_ctx.set_fonts(font);
 
-        // Create a new TelnetClient instance wrapped in an Arc<Mutex>
-        let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
-
-        // Create a new Lua instance
-        let lua = Lua::new();
-        println!("Lua instance address in TemplateApp: {:p}", &lua);
-
-        // After initializing the Lua environment in the new method
-        if let Err(err) = init_lua(&lua, telnet_client.clone()) {
-            eprintln!("Failed to initialize Lua: {:?}", err);
-            panic!("Failed to initialize Lua");
-        }
-
-        // Set test_value in the Lua environment (for testing)
-        lua.globals()
-            .set("test_value", "Value set in new method")
-            .unwrap();
-
-        // Call the print function directly (for testing)
-        if let Err(err) = lua
-            .load(r#"print("Direct call from TemplateApp::new")"#)
-            .exec()
-        {
-            eprintln!("Error calling print function directly: {:?}", err);
-        }
         // Create a new TemplateApp instance
         let app = TemplateApp {
             label: "Hello World!".to_owned(),
@@ -96,7 +71,7 @@ impl TemplateApp {
             frame_durations: VecDeque::with_capacity(10),
             last_update_time: None,
             show_lua_execution_window: RefCell::new(false),
-            lua,
+            lua: None,
             lua_code: String::new(),
             lua_output_buffer: Arc::new(Mutex::new(String::new())),
         };
@@ -116,14 +91,16 @@ impl eframe::App for TemplateApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Simplify the Lua script to call the print function and return a value
-        let lua_script = r#"
-        print("Direct call from update")
-        return "Return value from print"
-    "#;
-        match self.lua.load(lua_script).eval::<String>() {
-            Ok(return_value) => println!("Return value from Lua execution: {}", return_value),
-            Err(err) => eprintln!("Error in Lua execution: {:?}", err),
+        let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
+
+        // Create a new Lua instance
+        if self.lua.is_none() {
+            let lua = Lua::new();
+            if let Err(err) = init_lua(&lua, telnet_client.clone()) {
+                eprintln!("Failed to initialize Lua: {:?}", err);
+                panic!("Failed to initialize Lua");
+            }
+            self.lua = Some(lua);
         }
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
             (
@@ -143,7 +120,6 @@ impl eframe::App for TemplateApp {
                 )],
             ),
         ];
-        println!("Lua instance address in eframe: {:p}", &self.lua);
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 for &(menu_name, ref submenus) in menus {
@@ -203,28 +179,35 @@ impl eframe::App for TemplateApp {
 
                                 ui.add_space(8.0);
                                 if ui.button("Execute").clicked() {
-                                    match self.lua.load(&self.lua_code).exec() {
-                                        Ok(_) => {
-                                            println!(
-                                                "Lua instance address in Execute: {:p}",
-                                                &self.lua
-                                            );
-
-                                            // Send success message to Telnet client
-                                            self.telnet_client.append_text(
-                                                "Lua code executed successfully.\n",
-                                                Color32::GREEN,
-                                            );
+                                    if let Some(lua) = &self.lua {
+                                        // Wrap the Lua code in a function that captures the output of print statements
+                                        let modified_lua_code = format!(
+                                            "local old_print = print; \
+                                             local output = ''; \
+                                             print = function(...) old_print(...); output = output .. ... .. '\\n'; end; \
+                                             {} \
+                                             print = old_print; \
+                                             return output",
+                                            self.lua_code
+                                        );
+                                
+                                        match lua.load(&modified_lua_code).eval::<String>() {
+                                            Ok(output) => {
+                                                // Append the output to the Telnet client
+                                                self.telnet_client.append_text(&output, Color32::KHAKI);
+                                            }
+                                            Err(err) => {
+                                                // Handle error
+                                                let error_message = format!("Error executing Lua code: {}\n", err);
+                                                self.telnet_client.append_text(&error_message, Color32::RED);
+                                            }
                                         }
-                                        Err(e) => {
-                                            // Send error message to Telnet client
-                                            let error_message =
-                                                format!("Error executing Lua code: {}\n", e);
-                                            self.telnet_client
-                                                .append_text(&error_message, Color32::RED);
-                                        }
+                                    } else {
+                                        // Handle the case where lua is not initialized
+                                        eprintln!("Lua instance is not initialized.");
                                     }
                                 }
+                                
                             });
                     }
 

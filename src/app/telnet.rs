@@ -25,6 +25,8 @@ impl TelnetClient {
     pub fn append_text(&mut self, text: &str, color: Color32) {
         println!("Appending to Telnet: {}", text); // Debug print
         self.received_data.push(vec![(text.to_string(), color)]);
+        // Log the data pushed to received_data
+        println!("Pushed to received_data: {:?}", self.received_data.last());
     }
 
     pub fn connect(&mut self, ip_address: &str, port: u16) -> Result<(), String> {

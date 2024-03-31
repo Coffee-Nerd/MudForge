@@ -8,7 +8,6 @@ pub struct LuaFunctions {
 }
 
 impl LuaFunctions {
-    // Method for the print function
     pub fn print(&self, text: String) -> LuaResult<()> {
         println!("this is being called");
         let mut telnet_client = self.telnet_client.lock().unwrap();
@@ -16,7 +15,6 @@ impl LuaFunctions {
         Ok(())
     }
 
-    // Method for the color_print function
     pub fn color_print(&self, (text, color): (String, String)) -> LuaResult<()> {
         let color = match color.as_str() {
             "red" => Color32::RED,
@@ -43,18 +41,6 @@ pub fn init_lua(lua: &Lua, telnet_client: Arc<Mutex<TelnetClient>>) -> LuaResult
     let globals = lua.globals();
     let print_function = lua.create_function(move |_, text: String| print_functions.print(text))?;
     globals.set("print", print_function)?;
-
-    println!("Custom print function set in Lua environment.");
-    let test_script = r#"
-       print("Hello from Lua!")
-       test_value = (test_value or 0) + 1
-       print('Test value:', test_value)
-    "#;
-
-    match lua.load(test_script).exec() {
-        Ok(_) => println!("Test script executed successfully."),
-        Err(e) => println!("Error executing test script: {:?}", e),
-    }
 
     let color_print_function = lua.create_function(move |_, args: (String, String)| {
         color_print_functions.color_print(args)

@@ -23,8 +23,21 @@ impl TelnetClient {
         }
     }
     pub fn append_text(&mut self, text: &str, color: Color32) {
-        println!("Appending to Telnet: {}", text); // Debug print
+        println!("APPEND_TEXT to Telnet: {}", text); // Debug print
         self.received_data.push(vec![(text.to_string(), color)]);
+        // Log the data pushed to received_data
+        println!("Pushed to received_data: {:?}", self.received_data.last());
+    }
+
+    pub fn append_text_with_colours(
+        &mut self,
+        text: &str,
+        text_colour: Color32,
+        back_colour: Color32,
+    ) {
+        println!("Appending to Telnet from TEXT_WITH_COLOURS: {}", text); // Debug print
+        self.received_data
+            .push(vec![(text.to_string(), text_colour)]);
         // Log the data pushed to received_data
         println!("Pushed to received_data: {:?}", self.received_data.last());
     }

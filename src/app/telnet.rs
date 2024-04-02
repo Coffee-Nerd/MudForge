@@ -42,7 +42,7 @@ impl TelnetClient {
         println!("Pushed to received_data: {:?}", self.received_data.last());
     }
 
-    pub fn connect(&mut self, ip_address: &str, port: u16) -> Result<(), String> {
+    pub fn connect(&mut self, ip_address: &str, port: &str) -> Result<(), String> {
         let addr = format!("{}:{}", ip_address, port);
         let socket_addr = addr
             .to_socket_addrs()

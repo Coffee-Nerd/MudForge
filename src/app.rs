@@ -1,17 +1,17 @@
 use std::cell::RefCell;
 pub mod ansi_color;
 pub mod functions;
+mod lua_execution;
 mod miniwindow;
+mod settings_window;
+use settings_window::SettingsWindow;
 mod styles;
 pub mod telnet;
-use crate::app::functions::init_lua;
-use crate::app::telnet::TelnetClient;
+use crate::app::lua_execution::LuaExecutor;
 use egui::Color32;
-use egui::TextBuffer;
 use miniwindow::WindowResizeTest;
-use mlua::{Function, Lua};
+use mlua::Lua;
 use std::collections::VecDeque;
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 #[serde(default)]
@@ -22,6 +22,9 @@ pub struct TemplateApp {
     #[serde(skip)]
     telnet_client: telnet::TelnetClient,
     show_connection_prompt: RefCell<bool>, // Using RefCell
+    show_settings: RefCell<bool>,          // Using RefCell
+    #[serde(skip)]
+    settings_window: SettingsWindow,
     ip_address: String,
     port: u16,
     command: String,
@@ -39,8 +42,9 @@ pub struct TemplateApp {
     show_lua_execution_window: RefCell<bool>,
     #[serde(skip)]
     lua: Option<Lua>,
+    #[serde(skip)]
+    lua_executor: LuaExecutor,
     lua_code: String,
-    lua_output_buffer: Arc<Mutex<String>>,
 }
 
 impl TemplateApp {
@@ -52,6 +56,7 @@ impl TemplateApp {
 
         let font = styles::custom_font();
         cc.egui_ctx.set_fonts(font);
+        let lua_executor = LuaExecutor::new().expect("Failed to initialize Lua executor");
 
         // Create a new TemplateApp instance
         let app = TemplateApp {
@@ -60,6 +65,8 @@ impl TemplateApp {
             window_resize_test: WindowResizeTest::new(),
             telnet_client: telnet::TelnetClient::new(),
             show_connection_prompt: RefCell::new(false),
+            settings_window: SettingsWindow::default(),
+            show_settings: RefCell::new(false),
             ip_address: "127.0.0.1".to_owned(),
             port: 23,
             command: String::new(),
@@ -72,8 +79,8 @@ impl TemplateApp {
             last_update_time: None,
             show_lua_execution_window: RefCell::new(false),
             lua: None,
+            lua_executor,
             lua_code: String::new(),
-            lua_output_buffer: Arc::new(Mutex::new(String::new())),
         };
 
         // Initialize the rest, if needed
@@ -91,24 +98,21 @@ impl eframe::App for TemplateApp {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        let telnet_client = Arc::new(Mutex::new(TelnetClient::new()));
-
-        // Create a new Lua instance
-        if self.lua.is_none() {
-            let lua = Lua::new();
-            if let Err(err) = init_lua(&lua, telnet_client.clone()) {
-                eprintln!("Failed to initialize Lua: {:?}", err);
-                panic!("Failed to initialize Lua");
-            }
-            self.lua = Some(lua);
-        }
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
             (
                 "File",
-                vec![(
-                    "Quit",
-                    Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close)),
-                )],
+                vec![
+                    (
+                        "Settings",
+                        Box::new(|s, _| {
+                            s.settings_window.open = true;
+                        }),
+                    ),
+                    (
+                        "Quit",
+                        Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close)),
+                    ),
+                ],
             ),
             (
                 "Connection",
@@ -144,7 +148,6 @@ impl eframe::App for TemplateApp {
                 });
                 // Make the CentralPanel fill the entire width of the window
                 ui.set_max_width(ui.available_size().x);
-
                 // Add a text input field for the command
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
@@ -173,41 +176,21 @@ impl eframe::App for TemplateApp {
                             .show(ctx, |ui| {
                                 ui.label("Enter Lua code to execute:");
                                 ui.add_space(8.0);
-
                                 // Use the lua_code field for the TextEdit
                                 ui.code_editor(&mut self.lua_code);
 
                                 ui.add_space(8.0);
                                 if ui.button("Execute").clicked() {
-                                    if let Some(lua) = &self.lua {
-                                        // Wrap the Lua code in a function that captures the output of print statements
-                                        let modified_lua_code = format!(
-                                            "local old_print = print; \
-                                             local output = ''; \
-                                             print = function(...) old_print(...); output = output .. ... .. '\\n'; end; \
-                                             {} \
-                                             print = old_print; \
-                                             return output",
-                                            self.lua_code
-                                        );
-                                
-                                        match lua.load(&modified_lua_code).eval::<String>() {
-                                            Ok(output) => {
-                                                // Append the output to the Telnet client
-                                                self.telnet_client.append_text(&output, Color32::KHAKI);
-                                            }
-                                            Err(err) => {
-                                                // Handle error
-                                                let error_message = format!("Error executing Lua code: {}\n", err);
-                                                self.telnet_client.append_text(&error_message, Color32::RED);
-                                            }
-                                        }
+                                    if let Err(err) = self.lua_executor.execute(&self.lua_code) {
+                                        let error_message =
+                                            format!("Error executing Lua code: {}\n", err);
+                                        self.telnet_client
+                                            .append_text(&error_message, Color32::RED);
                                     } else {
-                                        // Handle the case where lua is not initialized
-                                        eprintln!("Lua instance is not initialized.");
+                                        let output = self.lua_executor.take_output();
+                                        self.telnet_client.append_text(&output, Color32::KHAKI);
                                     }
                                 }
-                                
                             });
                     }
 
@@ -294,6 +277,11 @@ impl eframe::App for TemplateApp {
             }
         }
 
+        // Check if the "Settings" menu item was clicked and toggle the window visibility
+        if *self.show_settings.borrow() {
+            self.settings_window.show(ctx);
+        }
+
         if self.telnet_client.is_connected() {
             if let Some(_data) = self.telnet_client.read_nonblocking() {
                 // Request a repaint for the next frame
@@ -323,14 +311,6 @@ impl eframe::App for TemplateApp {
                 self.last_frame_update = Some(now);
             }
             ctx.request_repaint();
-        }
-        if let Ok(mut buffer) = self.lua_output_buffer.lock() {
-            if !buffer.is_empty() {
-                let output = buffer.take();
-
-                // Append the output to the TelnetClient's received data
-                self.telnet_client.append_text(&output, Color32::WHITE); // Assuming white as the default output color
-            }
         }
         self.window_resize_test.show(ctx);
         self.telnet_client.show(ctx);

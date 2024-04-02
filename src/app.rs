@@ -3,6 +3,8 @@ pub mod ansi_color;
 pub mod functions;
 mod lua_execution;
 mod miniwindow;
+mod settings_window;
+use settings_window::SettingsWindow;
 mod styles;
 pub mod telnet;
 use crate::app::lua_execution::LuaExecutor;
@@ -20,6 +22,9 @@ pub struct TemplateApp {
     #[serde(skip)]
     telnet_client: telnet::TelnetClient,
     show_connection_prompt: RefCell<bool>, // Using RefCell
+    show_settings: RefCell<bool>,          // Using RefCell
+    #[serde(skip)]
+    settings_window: SettingsWindow,
     ip_address: String,
     port: u16,
     command: String,
@@ -60,6 +65,8 @@ impl TemplateApp {
             window_resize_test: WindowResizeTest::new(),
             telnet_client: telnet::TelnetClient::new(),
             show_connection_prompt: RefCell::new(false),
+            settings_window: SettingsWindow::default(),
+            show_settings: RefCell::new(false),
             ip_address: "127.0.0.1".to_owned(),
             port: 23,
             command: String::new(),
@@ -94,10 +101,18 @@ impl eframe::App for TemplateApp {
         let menus: &[(&str, Vec<(&str, Box<dyn Fn(&mut Self, &egui::Context)>)>)] = &[
             (
                 "File",
-                vec![(
-                    "Quit",
-                    Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close)),
-                )],
+                vec![
+                    (
+                        "Settings",
+                        Box::new(|s, _| {
+                            s.settings_window.open = true;
+                        }),
+                    ),
+                    (
+                        "Quit",
+                        Box::new(|_, ctx| ctx.send_viewport_cmd(egui::ViewportCommand::Close)),
+                    ),
+                ],
             ),
             (
                 "Connection",
@@ -133,7 +148,6 @@ impl eframe::App for TemplateApp {
                 });
                 // Make the CentralPanel fill the entire width of the window
                 ui.set_max_width(ui.available_size().x);
-
                 // Add a text input field for the command
                 ui.add_space(16.0);
                 ui.horizontal(|ui| {
@@ -162,7 +176,6 @@ impl eframe::App for TemplateApp {
                             .show(ctx, |ui| {
                                 ui.label("Enter Lua code to execute:");
                                 ui.add_space(8.0);
-
                                 // Use the lua_code field for the TextEdit
                                 ui.code_editor(&mut self.lua_code);
 
@@ -262,6 +275,11 @@ impl eframe::App for TemplateApp {
             if close_window {
                 *self.show_connection_prompt.borrow_mut() = false;
             }
+        }
+
+        // Check if the "Settings" menu item was clicked and toggle the window visibility
+        if *self.show_settings.borrow() {
+            self.settings_window.show(ctx);
         }
 
         if self.telnet_client.is_connected() {

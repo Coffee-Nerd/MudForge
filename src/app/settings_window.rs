@@ -37,7 +37,7 @@ impl SettingsWindow {
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
                     // Side panel equivalent for selecting categories
-                    ScrollArea::vertical().show(ui, |ui| {
+                    ui.vertical(|ui| {
                         ui.selectable_value(
                             &mut self.selected_category,
                             SettingsCategory::Style,
@@ -48,7 +48,6 @@ impl SettingsWindow {
                             SettingsCategory::Appearance,
                             "Appearance",
                         );
-                        // Add selectable values for other categories...
                     });
 
                     ui.separator();

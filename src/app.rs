@@ -26,7 +26,7 @@ pub struct TemplateApp {
     #[serde(skip)]
     settings_window: SettingsWindow,
     ip_address: String,
-    port: u16,
+    port: String,
     command: String,
     command_history: Vec<String>,
     current_history_index: usize,
@@ -58,17 +58,20 @@ impl TemplateApp {
         cc.egui_ctx.set_fonts(font);
         let lua_executor = LuaExecutor::new().expect("Failed to initialize Lua executor");
 
-        // Create a new TemplateApp instance
-        let app = TemplateApp {
+        if let Some(storage) = cc.storage {
+            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
+        }
+
+        Self {
             label: "Hello World!".to_owned(),
             value: 2.7,
             window_resize_test: WindowResizeTest::new(),
             telnet_client: telnet::TelnetClient::new(),
             show_connection_prompt: RefCell::new(false),
-            settings_window: SettingsWindow::default(),
             show_settings: RefCell::new(false),
+            settings_window: SettingsWindow::default(),
             ip_address: "127.0.0.1".to_owned(),
-            port: 23,
+            port: 23.to_string(),
             command: String::new(),
             command_history: Vec::new(),
             current_history_index: 0,
@@ -81,14 +84,7 @@ impl TemplateApp {
             lua: None,
             lua_executor,
             lua_code: String::new(),
-        };
-
-        // Initialize the rest, if needed
-        if let Some(storage) = cc.storage {
-            return eframe::get_value(storage, eframe::APP_KEY).unwrap_or_default();
         }
-
-        app
     }
 }
 
@@ -105,6 +101,7 @@ impl eframe::App for TemplateApp {
                     (
                         "Settings",
                         Box::new(|s, _| {
+                            *s.show_settings.borrow_mut() = true;
                             s.settings_window.open = true;
                         }),
                     ),
@@ -124,6 +121,7 @@ impl eframe::App for TemplateApp {
                 )],
             ),
         ];
+
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 for &(menu_name, ref submenus) in menus {
@@ -262,10 +260,10 @@ impl eframe::App for TemplateApp {
                     });
                     ui.horizontal(|ui| {
                         ui.label("Port number:");
-                        ui.text_edit_singleline(&mut self.port.to_string());
+                        ui.text_edit_singleline(&mut self.port);
                     });
                     if ui.button("Connect").clicked() {
-                        if let Err(e) = self.telnet_client.connect(&self.ip_address, self.port) {
+                        if let Err(e) = self.telnet_client.connect(&self.ip_address, &self.port) {
                             eprintln!("Connection error: {}", e);
                         }
                         close_window = true;
@@ -276,7 +274,6 @@ impl eframe::App for TemplateApp {
                 *self.show_connection_prompt.borrow_mut() = false;
             }
         }
-
         // Check if the "Settings" menu item was clicked and toggle the window visibility
         if *self.show_settings.borrow() {
             self.settings_window.show(ctx);

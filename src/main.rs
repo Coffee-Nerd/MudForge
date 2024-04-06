@@ -5,8 +5,8 @@ mod app;
 
 use app::telnet::TelnetClient;
 use lazy_static::lazy_static;
-use mlua::prelude::*; // Use prelude to include Lua and LuaError
-use std::sync::Mutex; // Add this line to use the TelnetClient struct
+use mlua::prelude::*;
+use std::sync::Mutex;
 
 lazy_static! {
     pub static ref TELNET_CLIENT: Mutex<TelnetClient> = Mutex::new(TelnetClient::new());

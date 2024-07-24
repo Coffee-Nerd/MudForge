@@ -1,6 +1,8 @@
 # MudForge: A Modern, Cross-Platform MUD Client
 
 MudForge is a cutting-edge, highly performant MUD (Multi-User Dungeon) client written in Rust, designed with the future in mind. It aims to bring MUD gaming into the modern era with fast rendering, extensive customization, and a user-friendly interface while staying true to the classic MUD experience.
+![240724_22h07m27s_screenshot](https://github.com/user-attachments/assets/bdf4d09b-4a0c-4371-ab04-6009f541f419)
+
 
 ## Features
 

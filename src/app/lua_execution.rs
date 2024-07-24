@@ -1,6 +1,7 @@
 use crate::app::functions::init_lua;
 use crate::app::telnet::TelnetClient;
 use mlua::{Lua, Result};
+use std::env;
 use std::fs;
 use std::sync::{Arc, Mutex};
 pub struct LuaExecutor {
@@ -20,7 +21,19 @@ impl LuaExecutor {
         let output_buffer = Arc::new(Mutex::new(String::new()));
         let telnet_client = Arc::new(Mutex::new(TelnetClient::new())); // Create a new TelnetClient instance
         init_lua(&lua, telnet_client)?; // Call init_lua to expose custom functions
-                                        // Load Lua scripts from the "lua" folder
+
+        // Get the current working directory
+        let current_dir = env::current_dir().unwrap();
+        let lua_dir = current_dir.join("lua");
+
+        // Set LUA_PATH to include the lua directory
+        let lua_path = format!("{}/?.lua", lua_dir.to_str().unwrap());
+
+        // Set the LUA_PATH in the Lua state
+        lua.load(&format!(r#"package.path = "{}""#, lua_path))
+            .exec()?;
+
+        // Load Lua scripts from the "lua" folder
         load_lua_scripts(&lua, "lua")?;
 
         Ok(Self { lua, output_buffer })
@@ -33,21 +46,24 @@ impl LuaExecutor {
              local old_note = Note; \
              local old_tell = Tell; \
              local old_colour_note = colour_note; \
-             local old_ColourTell = ColourTell; \
+             local old_colour_tell = ColourTell; \
+             local old_ansi_note = AnsiNote; \
              local output = ''; \
              print = function(...) old_print(...); output = output .. table.concat({{...}}, ' ') .. '\\n'; end; \
              color_print = function(...) old_color_print(...); output = output .. table.concat({{...}}, ' ') .. '\\n'; end; \
              Note = function(...) old_note(...); output = output .. table.concat({{...}}, ' ') .. '\\n'; end; \
              Tell = function(...) old_tell(...); output = output .. table.concat({{...}}, ' '); end; \
              colour_note = function(...) old_colour_note(...); output = output .. table.concat({{...}}, ' ') .. '\\n'; end; \
-             ColourTell = function(...) old_ColourTell(...); output = output .. table.concat({{...}}, ' '); end; \
+             ColourTell = function(...) old_colour_tell(...); output = output .. table.concat({{...}}, ' '); end; \
+             AnsiNote = function(...) old_ansi_note(...); output = output .. table.concat({{...}}, ' ') .. '\\n'; end; \
              {} \
              print = old_print; \
              color_print = old_color_print; \
              Note = old_note; \
              Tell = old_tell; \
              colour_note = old_colour_note; \
-             ColourTell = old_ColourTell; \
+             ColourTell = old_colour_tell; \
+             AnsiNote = old_ansi_note; \
              return output",
             code
         );

@@ -22,11 +22,11 @@ pub fn default_style() -> Style {
 }
 
 pub fn custom_font() -> FontDefinitions {
-    let font_ReFixedysMono = include_bytes!("../data/refixedsys-mono.otf").to_vec();
+    let font_re_fixedys_mono = include_bytes!("../data/refixedsys-mono.otf").to_vec();
     let mut font = FontDefinitions::default();
     font.font_data.insert(
         "ReFixedys Mono".to_string(),
-        FontData::from_owned(font_ReFixedysMono),
+        FontData::from_owned(font_re_fixedys_mono),
     );
     font.families
         .get_mut(&FontFamily::Monospace)

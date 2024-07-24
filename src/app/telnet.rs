@@ -1,16 +1,17 @@
 use crate::app::ansi_color::COLOR_MAP;
 use egui::{Color32, ScrollArea};
 use libmudtelnet::events::TelnetEvents;
-use libmudtelnet::Parser; // Adjusted import for TelnetEvents
+use libmudtelnet::Parser;
+use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
-use std::time::Instant;
-
 pub struct TelnetClient {
     stream: Option<TcpStream>,
     pub connection_open: bool,
-    received_data: Vec<Vec<(String, Color32)>>,
+    pub received_data: Vec<Vec<(String, Color32)>>,
     parser: Parser,
+    incomplete_sequence: Vec<u8>, // Buffer for incomplete ANSI sequences
+    write_queue: VecDeque<Vec<u8>>, // Queue for outgoing data
 }
 
 impl TelnetClient {
@@ -20,26 +21,28 @@ impl TelnetClient {
             connection_open: false,
             received_data: Vec::new(),
             parser: Parser::new(),
+            incomplete_sequence: Vec::new(),
+            write_queue: VecDeque::new(),
         }
     }
+
     pub fn append_text(&mut self, text: &str, color: Color32) {
-        println!("APPEND_TEXT to Telnet: {}", text); // Debug print
         self.received_data.push(vec![(text.to_string(), color)]);
-        // Log the data pushed to received_data
-        println!("Pushed to received_data: {:?}", self.received_data.last());
     }
 
     pub fn append_text_with_colours(
         &mut self,
         text: &str,
         text_colour: Color32,
-        back_colour: Color32,
+        _back_colour: Color32,
     ) {
-        println!("Appending to Telnet from TEXT_WITH_COLOURS: {}", text); // Debug print
         self.received_data
             .push(vec![(text.to_string(), text_colour)]);
-        // Log the data pushed to received_data
-        println!("Pushed to received_data: {:?}", self.received_data.last());
+    }
+
+    pub fn _append_ansi_text(&mut self, text: &str) {
+        let parsed_segments = parse_ansi_codes(text.as_bytes().to_vec());
+        self.received_data.extend(parsed_segments);
     }
 
     pub fn connect(&mut self, ip_address: &str, port: &str) -> Result<(), String> {
@@ -57,28 +60,27 @@ impl TelnetClient {
             .map_err(|e| format!("Failed to set non-blocking mode: {}", e))?;
         self.stream = Some(stream);
         self.connection_open = true;
-        println!("Connected to {}:{}", ip_address, port);
         Ok(())
     }
 
     pub fn read_nonblocking(&mut self) -> Option<Vec<(String, Color32)>> {
         if let Some(ref mut stream) = self.stream {
-            let mut buffer = [0; 8194]; // Increase buffer size is original, but this fixes parsing issues...//let mut buffer = [0; 1024];
+            let mut buffer = [0; 8192];
             match stream.read(&mut buffer) {
                 Ok(size) if size > 0 => {
-                    let events = self.parser.receive(&buffer[..size]);
-                    let parsed_text = self.handle_telnet_events(events);
-                    // Print raw data in hexadecimal
-                    println!("Raw incoming data (hex): {:02X?}", buffer);
+                    let mut data = self.incomplete_sequence.clone();
+                    data.extend_from_slice(&buffer[..size]);
 
-                    // Append the parsed text-color pairs to received_data
+                    let events = self.parser.receive(&data);
+                    let parsed_text = self.handle_telnet_events(events);
+
                     self.received_data.extend(parsed_text.clone());
 
-                    // Debug message for received text
-                    println!("Received text: {:?}", parsed_text);
+                    self.incomplete_sequence = data;
+
                     Some(parsed_text.into_iter().flatten().collect())
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => None, // Non-blocking read would block
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => None,
                 _ => None,
             }
         } else {
@@ -87,15 +89,24 @@ impl TelnetClient {
     }
 
     pub fn write(&mut self, buffer: &[u8]) -> Result<(), String> {
+        self.write_queue.push_back(buffer.to_vec());
+        self.flush_write_queue()
+    }
+
+    fn flush_write_queue(&mut self) -> Result<(), String> {
         if let Some(ref mut stream) = self.stream {
-            match stream.write_all(buffer) {
-                Ok(_) => Ok(()),
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => Ok(()), // Non-blocking write would block
-                Err(e) => Err(format!("Write error: {}", e)),
+            while let Some(data) = self.write_queue.pop_front() {
+                match stream.write_all(&data) {
+                    Ok(_) => continue,
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        self.write_queue.push_front(data);
+                        break;
+                    }
+                    Err(e) => return Err(format!("Write error: {}", e)),
+                }
             }
-        } else {
-            Err("Not connected".to_string())
         }
+        Ok(())
     }
 
     pub fn is_connected(&self) -> bool {
@@ -104,42 +115,32 @@ impl TelnetClient {
 
     pub fn show(&mut self, ctx: &egui::Context) {
         if self.connection_open {
-            let start_time = Instant::now();
             egui::Window::new("Telnet Connection")
                 .open(&mut self.connection_open)
                 .resizable(true)
-                //.frame(egui::Frame{fill:egui::Color32::TRANSPARENT, ..Default::default()})
                 .show(ctx, |ui| {
-                    ScrollArea::vertical()
-                        .auto_shrink(false)
-                        .stick_to_bottom(true)
-                        .show_rows(
-                            ui,
-                            ui.text_style_height(&egui::TextStyle::Body),
-                            self.received_data.len(),
-                            |ui, row_range| {
-                                for row in row_range {
-                                    let line = &self.received_data[row];
-                                    let mut job = egui::text::LayoutJob::default();
-                                    for (text, color) in line {
-                                        job.append(
-                                            text,
-                                            0.0,
-                                            egui::text::TextFormat {
-                                                font_id: ui.style().text_styles
-                                                    [&egui::TextStyle::Body]
-                                                    .clone(),
-                                                color: *color,
-                                                ..Default::default()
-                                            },
-                                        );
-                                    }
-                                    ui.add(egui::Label::new(job));
-                                }
-                                let elapsed = start_time.elapsed();
-                                //  println!("Visible rows rendered in: {:?}", elapsed);
-                            },
-                        );
+                    let scroll_area = ScrollArea::vertical()
+                        .auto_shrink([false; 2])
+                        .stick_to_bottom(true);
+
+                    scroll_area.show(ui, |ui| {
+                        for (_row_index, line) in self.received_data.iter().enumerate() {
+                            let mut job = egui::text::LayoutJob::default();
+                            for (text, color) in line {
+                                job.append(
+                                    text,
+                                    0.0,
+                                    egui::text::TextFormat {
+                                        font_id: ui.style().text_styles[&egui::TextStyle::Body]
+                                            .clone(),
+                                        color: *color,
+                                        ..Default::default()
+                                    },
+                                );
+                            }
+                            ui.add(egui::Label::new(job));
+                        }
+                    });
                 });
         }
     }
@@ -150,7 +151,6 @@ impl TelnetClient {
         for event in events {
             match event {
                 TelnetEvents::DataReceive(data) => {
-                    // Convert Bytes to Vec<u8> before passing to parse_ansi_codes
                     let parsed_text = parse_ansi_codes(data.to_vec());
                     parsed_data.extend(parsed_text);
                 }
@@ -159,9 +159,7 @@ impl TelnetClient {
                         let _ = stream.write_all(&data);
                     }
                 }
-                _ => {
-                    // Handle other TelnetEvents as needed
-                }
+                _ => {}
             }
         }
 
@@ -171,7 +169,6 @@ impl TelnetClient {
 
 impl Default for TelnetClient {
     fn default() -> Self {
-        println!("Creating default TelnetClient instance");
         Self::new()
     }
 }
@@ -186,14 +183,13 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
     let mut results: Vec<Vec<(String, Color32)>> = Vec::new();
     let mut current_line: Vec<(String, Color32)> = Vec::new();
     let mut current_text = String::new();
-    let mut current_color = Color32::WHITE; // Default color
+    let mut current_color = Color32::WHITE;
     let mut state = AnsiState::Normal;
 
     for byte in buffer {
         match state {
             AnsiState::Normal => {
                 if byte == 0x1B {
-                    // ESC character
                     state = AnsiState::Escaped;
                     if !current_text.is_empty() {
                         current_line.push((current_text.clone(), current_color));
@@ -205,7 +201,6 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
             }
             AnsiState::Escaped => {
                 if byte == b'[' {
-                    // CSI character
                     state = AnsiState::Parsing(Vec::new());
                 } else {
                     state = AnsiState::Normal;
@@ -213,7 +208,6 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
             }
             AnsiState::Parsing(ref mut buf) => {
                 if byte == b'm' {
-                    // End of ANSI code
                     let code = String::from_utf8_lossy(buf).to_string();
                     if let Some(new_color) = COLOR_MAP.get(code.as_str()) {
                         current_color = *new_color;
@@ -223,7 +217,7 @@ pub fn parse_ansi_codes(buffer: Vec<u8>) -> Vec<Vec<(String, Color32)>> {
                 } else if byte.is_ascii_digit() || byte == b';' {
                     buf.push(byte);
                 } else {
-                    state = AnsiState::Normal; // Unexpected byte, abort ANSI sequence.
+                    state = AnsiState::Normal;
                 }
             }
         }

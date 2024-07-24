@@ -5,8 +5,8 @@ mod app;
 
 use app::telnet::TelnetClient;
 use lazy_static::lazy_static;
-use mlua::prelude::*; // Use prelude to include Lua and LuaError
-use std::sync::Mutex; // Add this line to use the TelnetClient struct
+use mlua::prelude::*;
+use std::sync::Mutex;
 
 lazy_static! {
     pub static ref TELNET_CLIENT: Mutex<TelnetClient> = Mutex::new(TelnetClient::new());
@@ -22,7 +22,7 @@ impl From<LuaError> for CustomError {
 }
 
 impl std::fmt::Display for CustomError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eframe::run_native(
         "MudForge",
         native_options,
-        Box::new(|cc| Box::new(app::TemplateApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(app::TemplateApp::new(cc)))),
     )
     .map_err(|e| Box::new(CustomError(e.to_string())) as Box<dyn std::error::Error>)
 }

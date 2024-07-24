@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     eframe::run_native(
         "MudForge",
         native_options,
-        Box::new(|cc| Box::new(app::TemplateApp::new(cc))),
+        Box::new(|cc| Ok(Box::new(app::TemplateApp::new(cc)))),
     )
     .map_err(|e| Box::new(CustomError(e.to_string())) as Box<dyn std::error::Error>)
 }

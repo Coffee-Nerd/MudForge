@@ -1,4 +1,4 @@
-use egui::{TextEdit, Window};
+use egui;
 
 #[derive(serde::Deserialize, serde::Serialize, Default)]
 pub struct WindowResizeTest {

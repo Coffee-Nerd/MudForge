@@ -34,13 +34,13 @@ impl TelnetClient {
         &mut self,
         text: &str,
         text_colour: Color32,
-        back_colour: Color32,
+        _back_colour: Color32,
     ) {
         self.received_data
             .push(vec![(text.to_string(), text_colour)]);
     }
 
-    pub fn append_ansi_text(&mut self, text: &str) {
+    pub fn _append_ansi_text(&mut self, text: &str) {
         let parsed_segments = parse_ansi_codes(text.as_bytes().to_vec());
         self.received_data.extend(parsed_segments);
     }
@@ -124,7 +124,7 @@ impl TelnetClient {
                         .stick_to_bottom(true);
 
                     scroll_area.show(ui, |ui| {
-                        for (row_index, line) in self.received_data.iter().enumerate() {
+                        for (_row_index, line) in self.received_data.iter().enumerate() {
                             let mut job = egui::text::LayoutJob::default();
                             for (text, color) in line {
                                 job.append(

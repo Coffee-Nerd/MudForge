@@ -199,7 +199,7 @@ impl TemplateApp {
         }
     }
 
-    fn handle_lua_execution_window(&mut self, ctx: &egui::Context, ui: &mut egui::Ui) {
+    fn handle_lua_execution_window(&mut self, ctx: &egui::Context, _ui: &mut egui::Ui) {
         if ctx.input(|i| i.key_down(egui::Key::Escape) && i.key_pressed(egui::Key::I)) {
             let mut open = self.show_lua_execution_window.borrow_mut();
             *open = !*open;

@@ -1,4 +1,4 @@
-use egui::{Color32, ScrollArea, Ui, Visuals, Window};
+use egui::{Color32, Ui, Visuals, Window};
 
 #[derive(PartialEq)]
 pub enum SettingsCategory {

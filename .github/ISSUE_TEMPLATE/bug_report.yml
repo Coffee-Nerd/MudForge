@@ -1,0 +1,58 @@
+name: 🐛 Bug report
+description: Something isn't working in MudForge
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! The more detail, the faster we can fix it.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug — what you did and what went wrong.
+      placeholder: When I ... the app ...
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: How can we make it happen?
+      placeholder: |
+        1. Go to ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MudForge version
+      description: Find it in Settings → About (or the title bar).
+      placeholder: "e.g. 1.2.1470"
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Windows
+        - Linux
+        - Web (browser)
+    validations:
+      required: true
+  - type: input
+    id: mud
+    attributes:
+      label: Which MUD / host (if relevant)
+      placeholder: "e.g. DarkMUSH (host:port)"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors / console output
+      description: Paste any error messages, plugin-editor problems, or console logs.
+      render: text

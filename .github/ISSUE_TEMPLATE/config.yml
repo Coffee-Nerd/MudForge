@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 💬 Questions & ideas
+    url: https://github.com/Coffee-Nerd/MudForge/discussions
+    about: Ask questions, share setups, and discuss ideas in Discussions.
+  - name: 🧩 Plugins
+    url: https://github.com/Coffee-Nerd/MudForge-Plugins
+    about: Browse and share MudForge plugins.
